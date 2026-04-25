@@ -8,7 +8,7 @@ import { Loader2, Play, Square, Wand2 } from "lucide-react"
 import { fmt } from "@/features/shared/utils"
 import type { TaskSpec } from "@/features/shared/types"
 
-type EvalRow = { taskId: string; name: string; difficulty: number; avgReturn: number; successRate: number }
+type EvalRow = { taskId: string; name: string; difficulty: number; avgReturn: number; avgScore: number; successRate: number }
 
 export function CurriculumMode() {
   const tasks = useHabitat((s) => s.tasks)
@@ -65,7 +65,7 @@ export function CurriculumMode() {
     const res = await fetch("/api/policies/train", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ policyId: activePolicyId, taskIds, iterations: 8, populationSize: 14 }),
+      body: JSON.stringify({ policyId: activePolicyId, taskIds, iterations: 16, populationSize: 24 }),
     })
     const reader = res.body?.getReader()
     const dec = new TextDecoder()
@@ -82,7 +82,7 @@ export function CurriculumMode() {
         try {
           const evt = JSON.parse(line)
           if (evt.type === "iter") {
-            setStageMsg(`训练 ${evt.iter}/${evt.total} · best=${fmt(evt.best)} · 成功率 ${Math.round(evt.successRate * 100)}%`)
+            setStageMsg(`训练 ${evt.iter}/${evt.total} · score=${fmt(evt.best)} · 成功率 ${Math.round(evt.successRate * 100)}%`)
           } else if (evt.type === "done" && evt.policy) {
             upsertPolicy(evt.policy)
           }
@@ -109,11 +109,12 @@ export function CurriculumMode() {
           name: t?.name ?? p.taskId,
           difficulty: t?.difficulty ?? 0,
           avgReturn: p.avgReturn,
+          avgScore: p.avgScore ?? p.scoreBreakdown?.score ?? 0,
           successRate: p.successRate,
         }
       })
       setEvalRows(rows)
-      setGeneralization(r.result.generalization)
+      setGeneralization(r.result.generalizationScore ? r.result.generalizationScore / 100 : r.result.generalization)
     }
   }
 
@@ -216,7 +217,7 @@ export function CurriculumMode() {
                 <span className="truncate">{row.name}</span>
                 <div className="flex items-center gap-3 tabular">
                   <span className="text-muted-foreground">d={row.difficulty.toFixed(2)}</span>
-                  <span className="text-primary">R={fmt(row.avgReturn)}</span>
+                  <span className="text-primary">S={fmt(row.avgScore)}</span>
                   <span className={row.successRate > 0.5 ? "text-emerald-400" : "text-muted-foreground"}>
                     {Math.round(row.successRate * 100)}%
                   </span>

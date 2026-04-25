@@ -6,9 +6,17 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { fmt } from "@/features/shared/utils"
 import { Brain, Loader2, Sparkles } from "lucide-react"
-import type { Policy } from "@/features/shared/types"
+import type { DemoCount, EpisodeMeasures, Policy } from "@/features/shared/types"
 
-type Update = { iter: number; total: number; eliteAvg: number; best: number; successRate: number }
+type Update = {
+  iter: number
+  total: number
+  eliteAvg: number
+  best: number
+  successRate: number
+  demoSimilarity: number
+  scoreBreakdown?: EpisodeMeasures
+}
 
 export function LearnMode() {
   const policies = useHabitat((s) => s.policies)
@@ -20,8 +28,9 @@ export function LearnMode() {
 
   const [training, setTraining] = useState(false)
   const [history, setHistory] = useState<Update[]>([])
-  const [iterations, setIterations] = useState(12)
-  const [population, setPopulation] = useState(16)
+  const [demoCount, setDemoCount] = useState<DemoCount | null>(null)
+  const [iterations, setIterations] = useState(16)
+  const [population, setPopulation] = useState(24)
   const [taskMode, setTaskMode] = useState<"current" | "all">("current")
 
   const activePolicy = policies.find((p) => p.id === activePolicyId)
@@ -30,6 +39,7 @@ export function LearnMode() {
     if (training) return
     setTraining(true)
     setHistory([])
+    setDemoCount(null)
     const taskIds =
       taskMode === "current" && activeTaskId ? [activeTaskId] : tasks.slice(0, 4).map((t) => t.id)
     try {
@@ -64,8 +74,13 @@ export function LearnMode() {
                 eliteAvg: evt.eliteAvg,
                 best: evt.best,
                 successRate: evt.successRate,
+                demoSimilarity: evt.demoSimilarity ?? evt.scoreBreakdown?.demoSimilarity ?? 0,
+                scoreBreakdown: evt.scoreBreakdown,
               }
+              if (evt.demoCount) setDemoCount(evt.demoCount)
               setHistory((h) => [...h, u])
+            } else if (evt.type === "start") {
+              if (evt.demoCount) setDemoCount(evt.demoCount)
             } else if (evt.type === "done" && evt.policy) {
               const p = evt.policy as Policy
               upsertPolicy(p)
@@ -174,13 +189,26 @@ export function LearnMode() {
             <div className="tabular text-base text-primary">{fmt(last.eliteAvg)}</div>
           </div>
           <div>
-            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">最佳回报</div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">最佳评分</div>
             <div className="tabular text-base text-accent">{fmt(last.best)}</div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground">成功率</div>
             <div className="tabular text-base">{Math.round(last.successRate * 100)}%</div>
           </div>
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-muted-foreground">示范相似</div>
+            <div className="tabular text-base">{Math.round(last.demoSimilarity * 100)}%</div>
+          </div>
+        </div>
+      )}
+
+      {(demoCount || last?.scoreBreakdown) && (
+        <div className="grid grid-cols-2 gap-2 rounded-md border border-border bg-card/40 p-3 text-xs sm:grid-cols-4">
+          <Metric label="示范" value={demoCount ? `${demoCount.human}人 / ${demoCount.synthetic}合成` : "—"} />
+          <Metric label="进度" value={`${Math.round((last?.scoreBreakdown?.taskProgress ?? 0) * 100)}%`} />
+          <Metric label="路径效率" value={`${Math.round((last?.scoreBreakdown?.pathEfficiency ?? 0) * 100)}%`} />
+          <Metric label="安全" value={`${Math.round((last?.scoreBreakdown?.safetyScore ?? 0) * 100)}%`} />
         </div>
       )}
 
@@ -209,7 +237,8 @@ export function LearnMode() {
 
       {activePolicy && (
         <div className="rounded-md border border-border bg-card/40 p-2 font-mono text-[10px] text-muted-foreground">
-          训练任务族: {activePolicy.taskFamily.length || "—"} 个任务 · 上次更新{" "}
+          训练任务族: {activePolicy.taskFamily.length || "—"} 个任务 · final score{" "}
+          {activePolicy.scoreBreakdown ? fmt(activePolicy.scoreBreakdown.score) : "—"} · 上次更新{" "}
           {new Date(activePolicy.updatedAt).toLocaleTimeString()}
         </div>
       )}
@@ -217,6 +246,15 @@ export function LearnMode() {
       <p className="text-xs text-muted-foreground">
         学习模式使用 CEM (交叉熵法) 在所选任务上滚动评估线性策略，每轮保留精英样本拟合新分布。SSE 流实时更新进度。
       </p>
+    </div>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-0.5 font-mono tabular text-foreground">{value}</div>
     </div>
   )
 }

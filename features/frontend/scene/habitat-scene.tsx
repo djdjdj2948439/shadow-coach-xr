@@ -77,10 +77,6 @@ function SceneContent() {
       <OrbitControls
         target={[0, 0.3, 0]}
         enableDamping
-        dampingFactor={0.08}
-        minDistance={3}
-        maxDistance={12}
-        maxPolarAngle={Math.PI * 0.85}
       />
       <IssEnvironment />
       <RobotArm agent={agent} highlightGrip={held} />

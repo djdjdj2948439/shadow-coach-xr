@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { store } from "@/features/shared/server-store"
-import { evaluateOnTaskFamily } from "@/features/agent/policy"
+import { buildDemoDataset, evaluateOnTaskFamily } from "@/features/agent/policy"
 import type { TaskSpec } from "@/features/shared/types"
 
 export async function POST(req: Request) {
@@ -13,9 +13,11 @@ export async function POST(req: Request) {
   const tasks: TaskSpec[] = (taskIds && taskIds.length
     ? taskIds.map((id) => s.tasks.get(id)).filter(Boolean)
     : Array.from(s.tasks.values())) as TaskSpec[]
-  const result = evaluateOnTaskFamily(policy, tasks, body.trialsPerTask ?? 2)
+  const demoDataset = buildDemoDataset(Array.from(s.episodes.values()), tasks)
+  const result = evaluateOnTaskFamily(policy, tasks, body.trialsPerTask ?? 2, demoDataset)
   return NextResponse.json({
     result,
+    demoCount: demoDataset.count,
     tasks: tasks.map((t) => ({ id: t.id, name: t.name, difficulty: t.difficulty })),
   })
 }

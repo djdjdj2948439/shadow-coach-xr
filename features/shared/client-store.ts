@@ -200,6 +200,7 @@ function finalizeEpisode() {
     energyUsed: s.sim.agent.energyUsed,
     createdAt: Date.now(),
     policyId: policy?.id,
+    demoSource: s.mode === "manual" ? "human" : "policy",
   }
   useHabitat.setState({ runState: "completed", episodes: [ep, ...s.episodes].slice(0, 200) })
   // Persist to server in the background

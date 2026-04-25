@@ -11,10 +11,15 @@ type Metrics = {
   successRate: number
   avgReturn: number
   avgEnergy: number
+  avgScore: number
+  avgDemoSimilarity: number
+  avgPathEfficiency: number
+  avgSafetyScore: number
   last20Success: number
-  byMode: Record<string, { total: number; success: number; avgReturn: number }>
-  byTask: Record<string, { name: string; total: number; success: number; difficulty: number }>
-  series: { i: number; reward: number; successRate: number; energy: number }[]
+  byMode: Record<string, { total: number; success: number; avgReturn: number; avgScore: number }>
+  byTask: Record<string, { name: string; total: number; success: number; difficulty: number; avgScore: number }>
+  series: { i: number; reward: number; score: number; successRate: number; energy: number; demoSimilarity: number; pathEfficiency: number }[]
+  latestLearningCurve: { iter: number; eliteAvg: number; best: number; successRate: number; demoSimilarity: number; score: number }[]
   taskCount: number
   policyCount: number
   assetCount: number
@@ -30,10 +35,15 @@ export function MetricsPanel() {
     successRate: 0,
     avgReturn: 0,
     avgEnergy: 0,
+    avgScore: 0,
+    avgDemoSimilarity: 0,
+    avgPathEfficiency: 0,
+    avgSafetyScore: 0,
     last20Success: 0,
     byMode: {},
     byTask: {},
     series: [],
+    latestLearningCurve: [],
     taskCount: 0,
     policyCount: 0,
     assetCount: 0,
@@ -47,7 +57,7 @@ export function MetricsPanel() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Stat label="Episodes" value={m.total} hint={`${m.success} 成功`} />
         <Stat label="成功率" value={`${Math.round(m.successRate * 100)}%`} hint={`近20: ${Math.round(m.last20Success * 100)}%`} />
-        <Stat label="平均回报" value={fmt(m.avgReturn)} hint={`能耗 ${fmt(m.avgEnergy)}`} />
+        <Stat label="综合评分" value={fmt(m.avgScore)} hint={`reward ${fmt(m.avgReturn)} · 能耗 ${fmt(m.avgEnergy)}`} />
         <Stat label="规模" value={m.taskCount} hint={`policy ${m.policyCount} · asset ${m.assetCount}`} />
       </div>
 
@@ -79,7 +89,7 @@ export function MetricsPanel() {
                     fontSize: 12,
                     borderRadius: 6,
                   }}
-                  formatter={(v: number) => `${Math.round(v * 100)}%`}
+                  formatter={(v) => `${Math.round(Number(v ?? 0) * 100)}%`}
                 />
                 <Area type="monotone" dataKey="successRate" stroke="hsl(var(--primary))" fill="url(#grad-succ)" />
               </AreaChart>
@@ -91,8 +101,8 @@ export function MetricsPanel() {
       <Card>
         <CardContent className="p-3">
           <div className="mb-2 flex items-center justify-between">
-            <CardTitle>每集回报</CardTitle>
-            <Badge variant="outline">avg {fmt(m.avgReturn)}</Badge>
+            <CardTitle>每集评分</CardTitle>
+            <Badge variant="outline">avg {fmt(m.avgScore)}</Badge>
           </div>
           <div className="h-32 w-full">
             <ResponsiveContainer>
@@ -108,12 +118,43 @@ export function MetricsPanel() {
                     borderRadius: 6,
                   }}
                 />
-                <Line type="monotone" dataKey="reward" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="score" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="reward" stroke="hsl(var(--muted-foreground))" strokeWidth={1} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
       </Card>
+
+      {m.latestLearningCurve.length > 0 && (
+        <Card>
+          <CardContent className="p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <CardTitle>学习曲线</CardTitle>
+              <Badge variant="outline">{m.latestLearningCurve.length} iter</Badge>
+            </div>
+            <div className="h-32 w-full">
+              <ResponsiveContainer>
+                <LineChart data={m.latestLearningCurve}>
+                  <CartesianGrid stroke="hsl(var(--border))" strokeDasharray="3 3" />
+                  <XAxis dataKey="iter" stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={10} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      fontSize: 12,
+                      borderRadius: 6,
+                    }}
+                  />
+                  <Line type="monotone" dataKey="best" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="eliteAvg" stroke="hsl(var(--accent))" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Card>
@@ -129,7 +170,7 @@ export function MetricsPanel() {
                       {mode}
                     </Badge>
                     <div className="flex-1 tabular text-muted-foreground">
-                      {v.total} ep · avg {fmt(v.avgReturn)}
+                      {v.total} ep · score {fmt(v.avgScore)}
                     </div>
                     <div className="tabular text-emerald-400">{Math.round((v.success / v.total) * 100)}%</div>
                   </div>
@@ -150,6 +191,7 @@ export function MetricsPanel() {
                     <span className="w-12 tabular text-muted-foreground">d {v.difficulty.toFixed(2)}</span>
                     <span className="flex-1 truncate font-mono">{v.name}</span>
                     <span className="tabular text-muted-foreground">{v.total}</span>
+                    <span className="tabular text-primary">{fmt(v.avgScore)}</span>
                     <span className="tabular text-emerald-400">{Math.round((v.success / Math.max(1, v.total)) * 100)}%</span>
                   </div>
                 ))}

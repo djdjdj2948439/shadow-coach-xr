@@ -162,12 +162,12 @@ export function stepSim(s: SimState, action: Action): { state: SimState; record:
     }
   }
 
-  // If holding and grip released far from goal, drop
+  // If holding and grip released, drop. Releasing inside tolerance is the
+  // intended placement action and must allow success to trigger below.
   if (holding === s.task.target.id && a.grip < 0.3) {
     const dGoal = dist3(targetPos, s.task.target.goal)
-    if (dGoal > s.task.toleranceM) {
-      holding = null
-    }
+    if (dGoal <= s.task.toleranceM) targetPos = s.task.target.goal
+    holding = null
   }
 
   // Reward shaping
@@ -238,10 +238,31 @@ export function stepSim(s: SimState, action: Action): { state: SimState; record:
 
 export function buildFeatures(s: SimState): number[] {
   const ee = s.agent.endEffector
-  const t = s.targetPos
+  const holding = s.agent.holding === s.task.target.id ? 1 : 0
+  const t = holding ? s.task.target.goal : s.targetPos
   const d: Vec3 = [t[0] - ee[0], t[1] - ee[1], t[2] - ee[2]]
   const dist = Math.hypot(d[0], d[1], d[2])
   const v = s.agent.velocity
-  const holding = s.agent.holding === s.task.target.id ? 1 : 0
-  return [d[0], d[1], d[2], dist, holding, v[0], v[1], v[2], s.task.drift, 1]
+  const acquireConfidence = holding
+    ? 0
+    : clamp(1 - dist / Math.max(0.01, s.task.target.radius + 0.22), 0, 1)
+  const j = s.agent.joints
+  return [
+    d[0],
+    d[1],
+    d[2],
+    dist,
+    holding,
+    v[0],
+    v[1],
+    v[2],
+    s.task.drift,
+    1,
+    holding * dist,
+    acquireConfidence,
+    j.base,
+    j.shoulder,
+    j.elbow,
+    j.wrist,
+  ]
 }

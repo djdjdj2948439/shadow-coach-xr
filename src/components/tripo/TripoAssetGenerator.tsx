@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import Image from "next/image";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   AlertTriangle,
   Boxes,
@@ -9,14 +10,15 @@ import {
   ExternalLink,
   FileImage,
   LoaderCircle,
+  Mic,
   RefreshCcw,
   Server,
   ShieldCheck,
   Sparkles,
+  Square,
   Upload,
   X,
 } from "lucide-react";
-import Image from "next/image";
 
 import { TRIPO_PROMPT_PRESETS, TRIPO_PROMPT_PRESET_ORDER } from "@/lib/tripoPresets";
 import {
@@ -33,6 +35,12 @@ import {
 
 const POLL_INTERVAL_MS = 4000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
+const VOICE_READY_TEXT = "Ready";
+const VOICE_UNSUPPORTED_TEXT = "Voice input unsupported in this browser";
+const VOICE_LISTENING_TEXT = "Listening...";
+const VOICE_RECEIVED_TEXT = "Transcript received";
+
+type VoiceLanguage = "en-US" | "zh-CN";
 
 type GenerateApiResponse =
   | {
@@ -157,6 +165,25 @@ function getStatusClasses(status: TripoTaskStatus) {
   }
 }
 
+function getVoiceStatusClasses(statusText: string) {
+  if (statusText === VOICE_LISTENING_TEXT) {
+    return "border-sky-400/20 bg-sky-400/10 text-sky-100";
+  }
+
+  if (statusText === VOICE_RECEIVED_TEXT || statusText === VOICE_READY_TEXT) {
+    return "border-emerald-400/20 bg-emerald-400/10 text-emerald-100";
+  }
+
+  if (
+    statusText === VOICE_UNSUPPORTED_TEXT ||
+    statusText.startsWith("Voice input error:")
+  ) {
+    return "border-amber-400/20 bg-amber-400/10 text-amber-100";
+  }
+
+  return "border-white/12 bg-white/6 text-slate-200";
+}
+
 function shortTaskId(taskId: string) {
   return taskId.length > 18
     ? `${taskId.slice(0, 8)}...${taskId.slice(-6)}`
@@ -191,6 +218,49 @@ function getEntryInputMode(entry: TripoCacheEntry): TripoInputMode {
   return type === "image_to_model" ? "image" : "text";
 }
 
+function clampPromptText(value: string) {
+  const normalizedValue = value.replace(/\s+/g, " ").trim();
+
+  if (normalizedValue.length <= TRIPO_MAX_PROMPT_LENGTH) {
+    return {
+      value: normalizedValue,
+      truncated: false,
+    };
+  }
+
+  return {
+    value: normalizedValue.slice(0, TRIPO_MAX_PROMPT_LENGTH).trimEnd(),
+    truncated: true,
+  };
+}
+
+function getSpeechRecognitionConstructor() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.SpeechRecognition ?? window.webkitSpeechRecognition ?? null;
+}
+
+function getVoiceInputErrorMessage(error: string) {
+  switch (error) {
+    case "not-allowed":
+      return "Microphone permission was denied.";
+    case "service-not-allowed":
+      return "Speech recognition is not allowed in this browser.";
+    case "no-speech":
+      return "No speech was detected.";
+    case "audio-capture":
+      return "No microphone was found for audio capture.";
+    case "network":
+      return "The browser speech recognition service had a network error.";
+    case "aborted":
+      return "Voice input was stopped.";
+    default:
+      return error || "Unable to recognize speech.";
+  }
+}
+
 export default function TripoAssetGenerator() {
   const [selectedPreset, setSelectedPreset] =
     useState<(typeof TRIPO_PROMPT_PRESET_ORDER)[number]>("ISS_MODULE");
@@ -210,6 +280,38 @@ export default function TripoAssetGenerator() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
+  const [voiceLanguage, setVoiceLanguage] = useState<VoiceLanguage>("en-US");
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceStatusText, setVoiceStatusText] = useState(VOICE_READY_TEXT);
+  const [voiceInterimTranscript, setVoiceInterimTranscript] = useState("");
+  const [voiceFinalTranscript, setVoiceFinalTranscript] = useState("");
+  const [voicePromptBeforeTranscript, setVoicePromptBeforeTranscript] =
+    useState("");
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
+
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const voiceStatusRef = useRef(VOICE_READY_TEXT);
+  const voiceSupportRef = useRef(false);
+
+  function setVoiceStatus(nextStatus: string) {
+    voiceStatusRef.current = nextStatus;
+    setVoiceStatusText(nextStatus);
+  }
+
+  function cleanupRecognition() {
+    const recognition = recognitionRef.current;
+
+    if (!recognition) {
+      return;
+    }
+
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognitionRef.current = null;
+  }
 
   useEffect(() => {
     return () => {
@@ -218,6 +320,27 @@ export default function TripoAssetGenerator() {
       }
     };
   }, [referenceImagePreviewUrl]);
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      const isSupported = Boolean(getSpeechRecognitionConstructor());
+
+      voiceSupportRef.current = isSupported;
+      setIsVoiceSupported(isSupported);
+      setVoiceStatus(isSupported ? VOICE_READY_TEXT : VOICE_UNSUPPORTED_TEXT);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+
+      const recognition = recognitionRef.current;
+
+      if (recognition) {
+        cleanupRecognition();
+        recognition.stop();
+      }
+    };
+  }, []);
 
   const promptLength = prompt.length;
   const trimmedPrompt = prompt.trim();
@@ -421,6 +544,170 @@ export default function TripoAssetGenerator() {
     );
   }
 
+  function applyVoiceTranscriptToPrompt(nextTranscript: string) {
+    const normalizedTranscript = nextTranscript.replace(/\s+/g, " ").trim();
+
+    if (!normalizedTranscript) {
+      return;
+    }
+
+    const previousPrompt = prompt;
+    const { value, truncated } = clampPromptText(normalizedTranscript);
+
+    setPrompt(value);
+    setVoicePromptBeforeTranscript(previousPrompt);
+    setVoiceFinalTranscript(value);
+    setVoiceInterimTranscript("");
+    setVoiceStatus(VOICE_RECEIVED_TEXT);
+    setVoiceNote(
+      truncated
+        ? `Transcript was truncated to ${TRIPO_MAX_PROMPT_LENGTH} characters.`
+        : previousPrompt.trim().length > 0
+          ? "Prompt was replaced automatically. You can append the transcript instead."
+          : null,
+    );
+  }
+
+  function handleReplaceVoicePrompt() {
+    if (!voiceFinalTranscript) {
+      return;
+    }
+
+    const { value, truncated } = clampPromptText(voiceFinalTranscript);
+
+    setPrompt(value);
+    setVoiceStatus(VOICE_RECEIVED_TEXT);
+    setVoiceNote(
+      truncated
+        ? `Transcript was truncated to ${TRIPO_MAX_PROMPT_LENGTH} characters.`
+        : "Prompt replaced with the latest transcript.",
+    );
+  }
+
+  function handleAppendVoicePrompt() {
+    if (!voiceFinalTranscript) {
+      return;
+    }
+
+    const basePrompt = voicePromptBeforeTranscript.trim();
+    const combinedPrompt = basePrompt
+      ? `${basePrompt}\n${voiceFinalTranscript}`
+      : voiceFinalTranscript;
+    const { value, truncated } = clampPromptText(combinedPrompt);
+
+    setPrompt(value);
+    setVoiceStatus(VOICE_RECEIVED_TEXT);
+    setVoiceNote(
+      truncated
+        ? `Appended prompt was truncated to ${TRIPO_MAX_PROMPT_LENGTH} characters.`
+        : "Transcript appended to the original prompt.",
+    );
+  }
+
+  function handleStopVoiceInput() {
+    const recognition = recognitionRef.current;
+
+    if (!recognition) {
+      setIsListening(false);
+      setVoiceStatus(voiceSupportRef.current ? VOICE_READY_TEXT : VOICE_UNSUPPORTED_TEXT);
+      return;
+    }
+
+    recognition.stop();
+    setIsListening(false);
+  }
+
+  function handleStartVoiceInput() {
+    const SpeechRecognitionConstructor = getSpeechRecognitionConstructor();
+
+    if (!SpeechRecognitionConstructor) {
+      voiceSupportRef.current = false;
+      setIsVoiceSupported(false);
+      setVoiceStatus(VOICE_UNSUPPORTED_TEXT);
+      return;
+    }
+
+    try {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        cleanupRecognition();
+      }
+
+      setError(null);
+      setVoiceNote(null);
+      setVoiceInterimTranscript("");
+      setVoiceFinalTranscript("");
+      setVoicePromptBeforeTranscript("");
+
+      const recognition = new SpeechRecognitionConstructor();
+
+      recognition.lang = voiceLanguage;
+      recognition.interimResults = true;
+      recognition.continuous = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        setIsListening(true);
+        setVoiceStatus(VOICE_LISTENING_TEXT);
+      };
+
+      recognition.onresult = (event) => {
+        let interimTranscript = "";
+        let finalTranscript = "";
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const transcript = result[0]?.transcript ?? "";
+
+          if (result.isFinal) {
+            finalTranscript += `${transcript} `;
+          } else {
+            interimTranscript += `${transcript} `;
+          }
+        }
+
+        setVoiceInterimTranscript(interimTranscript.trim());
+
+        if (finalTranscript.trim()) {
+          applyVoiceTranscriptToPrompt(finalTranscript);
+        }
+      };
+
+      recognition.onerror = (event) => {
+        setIsListening(false);
+        setVoiceInterimTranscript("");
+        setVoiceStatus(
+          `Voice input error: ${getVoiceInputErrorMessage(event.error)}`,
+        );
+      };
+
+      recognition.onend = () => {
+        cleanupRecognition();
+        setIsListening(false);
+        setVoiceInterimTranscript("");
+
+        if (voiceStatusRef.current === VOICE_LISTENING_TEXT) {
+          setVoiceStatus(
+            voiceSupportRef.current ? VOICE_READY_TEXT : VOICE_UNSUPPORTED_TEXT,
+          );
+        }
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (voiceError) {
+      cleanupRecognition();
+      setIsListening(false);
+      setVoiceStatus(
+        `Voice input error: ${
+          voiceError instanceof Error
+            ? voiceError.message
+            : "Unable to start voice input."
+        }`,
+      );
+    }
+  }
+
   const refreshCacheEffect = useEffectEvent(() => {
     void refreshCache();
   });
@@ -481,10 +768,10 @@ export default function TripoAssetGenerator() {
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
                   Presets, prompt editing, optional reference image upload,
-                  server-side generation, polling, and result links stay inside
-                  this isolated debug page. The frontend never receives the
-                  Tripo API key, and this route does not implement the main 3D
-                  scene.
+                  browser voice input, server-side generation, polling, and
+                  result links stay inside this isolated debug page. The
+                  frontend never receives the Tripo API key, and this route does
+                  not implement the main 3D scene.
                 </p>
               </div>
             </div>
@@ -662,6 +949,109 @@ export default function TripoAssetGenerator() {
                 className="w-full resize-none rounded-[1.25rem] border border-white/10 bg-slate-950/80 px-4 py-4 text-sm leading-7 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-400/40 focus:ring-2 focus:ring-sky-400/15"
                 placeholder="Describe the WebXR asset you want to generate. Prompt is optional when a reference image is attached."
               />
+
+              <div className="mt-4 rounded-[1.25rem] border border-white/10 bg-slate-950/70 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-white">
+                      Voice input
+                    </div>
+                    <p className="mt-1 text-xs leading-6 text-slate-400">
+                      Voice input uses your browser&apos;s speech recognition.
+                      Audio is not sent to our Tripo backend; only the
+                      recognized text is used as the prompt.
+                    </p>
+                  </div>
+                  <div
+                    className={`rounded-full border px-3 py-1 text-xs ${getVoiceStatusClasses(
+                      voiceStatusText,
+                    )}`}
+                  >
+                    {voiceStatusText}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <label className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                    Language
+                  </label>
+                  <select
+                    value={voiceLanguage}
+                    onChange={(event) =>
+                      setVoiceLanguage(event.target.value as VoiceLanguage)
+                    }
+                    className="rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm text-slate-100 outline-none transition focus:border-sky-400/40"
+                  >
+                    <option value="en-US">en-US</option>
+                    <option value="zh-CN">zh-CN</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleStartVoiceInput}
+                    disabled={!isVoiceSupported || isListening}
+                    className="inline-flex items-center gap-2 rounded-full border border-sky-400/25 bg-sky-400/10 px-4 py-2 text-sm font-medium text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-white/5 disabled:text-slate-500"
+                  >
+                    <Mic className="h-4 w-4" />
+                    Voice Input
+                  </button>
+                  {isListening ? (
+                    <button
+                      type="button"
+                      onClick={handleStopVoiceInput}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose-400/25 bg-rose-400/10 px-4 py-2 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20"
+                    >
+                      <Square className="h-4 w-4" />
+                      Stop
+                    </button>
+                  ) : null}
+                </div>
+
+                {voiceInterimTranscript ? (
+                  <div className="mt-4 rounded-2xl border border-sky-400/20 bg-sky-400/8 p-4">
+                    <div className="text-xs uppercase tracking-[0.22em] text-sky-200/80">
+                      Interim transcript
+                    </div>
+                    <p className="mt-2 text-sm leading-7 text-sky-50">
+                      {voiceInterimTranscript}
+                    </p>
+                  </div>
+                ) : null}
+
+                {voiceFinalTranscript ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-400/20 bg-emerald-400/8 p-4">
+                    <div className="text-xs uppercase tracking-[0.22em] text-emerald-100/80">
+                      Latest transcript
+                    </div>
+                    <p className="mt-2 text-sm leading-7 text-emerald-50">
+                      {voiceFinalTranscript}
+                    </p>
+                    {voicePromptBeforeTranscript.trim() ? (
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={handleReplaceVoicePrompt}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:bg-white/10"
+                        >
+                          Replace prompt
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleAppendVoicePrompt}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-4 py-2 text-sm text-slate-100 transition hover:bg-white/10"
+                        >
+                          Append to prompt
+                        </button>
+                      </div>
+                    ) : null}
+                    {voiceNote ? (
+                      <p className="mt-3 text-xs leading-6 text-emerald-100/80">
+                        {voiceNote}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <button
                   type="button"
@@ -928,11 +1318,11 @@ export default function TripoAssetGenerator() {
         <section className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-6 shadow-[0_24px_64px_rgba(3,7,18,0.45)]">
           <h3 className="text-lg font-semibold text-white">Viewer status</h3>
           <p className="mt-2 text-sm leading-7 text-slate-400">
-            This debug page now supports both text-only and image-assisted
-            Tripo generation. No existing GLB viewer or XR scene loader was
-            found in this repo, so the current integration still stops at
-            stable <code>modelUrl</code> output for downstream Member B scene
-            loading.
+            This debug page supports text-only, image-assisted, and
+            browser-voice-assisted Tripo prompt creation. No existing GLB
+            viewer or XR scene loader was found in this repo, so the current
+            integration still stops at stable <code>modelUrl</code> output for
+            downstream Member B scene loading.
           </p>
         </section>
       </aside>

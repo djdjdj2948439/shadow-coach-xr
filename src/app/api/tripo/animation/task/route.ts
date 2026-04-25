@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { getTripoTask } from "@/lib/tripo";
-import { getCachedTask, setCachedTask } from "@/lib/tripoCache";
+import { getTripoAnimationTask } from "@/lib/tripoAnimation";
+import {
+  getCachedAnimationTask,
+  setCachedAnimationTask,
+} from "@/lib/tripoAnimationCache";
 import { isFinalTripoStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -24,7 +27,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const cachedEntry = getCachedTask(taskId);
+  const cachedEntry = getCachedAnimationTask(taskId);
 
   if (cachedEntry && !refresh && isFinalTripoStatus(cachedEntry.status)) {
     return NextResponse.json({
@@ -33,31 +36,31 @@ export async function GET(request: Request) {
       mock: cachedEntry.mock,
       taskId: cachedEntry.taskId,
       status: cachedEntry.status,
+      rigStatus: cachedEntry.rigStatus,
       modelUrl: cachedEntry.modelUrl,
+      riggedModelUrl: cachedEntry.riggedModelUrl,
+      animatedModelUrl: cachedEntry.animatedModelUrl,
       raw: cachedEntry.raw,
     });
   }
 
   try {
-    const result = await getTripoTask(taskId);
+    const result = await getTripoAnimationTask(taskId);
 
-    setCachedTask(taskId, {
+    setCachedAnimationTask(taskId, {
       taskId: result.taskId,
+      sourceTaskId: cachedEntry?.sourceTaskId,
+      sourceModelUrl: cachedEntry?.sourceModelUrl,
+      kind: result.kind,
+      assetType: cachedEntry?.assetType,
+      presetId: cachedEntry?.presetId,
       status: result.status,
+      rigStatus: result.rigStatus,
       modelUrl: result.modelUrl,
+      riggedModelUrl: result.riggedModelUrl,
+      animatedModelUrl: result.animatedModelUrl,
       raw: result.raw,
       mock: result.mock,
-      inputMode: cachedEntry?.inputMode,
-      prompt: cachedEntry?.prompt,
-      referenceImage: cachedEntry?.referenceImage ?? null,
-      assetType: cachedEntry?.assetType,
-      assetCategory: cachedEntry?.assetCategory,
-      pipelineMode: cachedEntry?.pipelineMode,
-      rigStatus: cachedEntry?.rigStatus,
-      rigTaskId: cachedEntry?.rigTaskId,
-      animationTaskId: cachedEntry?.animationTaskId,
-      riggedModelUrl: cachedEntry?.riggedModelUrl,
-      animatedModelUrl: cachedEntry?.animatedModelUrl,
     });
 
     return NextResponse.json({
@@ -66,7 +69,10 @@ export async function GET(request: Request) {
       mock: result.mock,
       taskId: result.taskId,
       status: result.status,
+      rigStatus: result.rigStatus,
       modelUrl: result.modelUrl,
+      riggedModelUrl: result.riggedModelUrl,
+      animatedModelUrl: result.animatedModelUrl,
       raw: result.raw,
     });
   } catch (error) {
@@ -77,7 +83,10 @@ export async function GET(request: Request) {
         mock: cachedEntry.mock,
         taskId: cachedEntry.taskId,
         status: cachedEntry.status,
+        rigStatus: cachedEntry.rigStatus,
         modelUrl: cachedEntry.modelUrl,
+        riggedModelUrl: cachedEntry.riggedModelUrl,
+        animatedModelUrl: cachedEntry.animatedModelUrl,
         raw: {
           ...cachedEntry.raw,
           cacheFallback: true,
@@ -91,7 +100,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Failed to fetch Tripo task.",
+            : "Failed to fetch Tripo animation task.",
       },
       { status: 500 },
     );

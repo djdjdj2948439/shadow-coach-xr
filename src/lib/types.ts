@@ -10,6 +10,40 @@ export type TripoTaskStatus =
 
 export type TripoInputMode = "text" | "image";
 
+export type TripoAssetCategory = "static" | "riggable";
+
+export type TripoAssetType =
+  | "iss_module"
+  | "tool_kit"
+  | "control_panel"
+  | "storage_bag"
+  | "handrail"
+  | "cable_bundle"
+  | "cupola_window"
+  | "cleaning_cloth"
+  | "docking_pad"
+  | "floating_tablet"
+  | "assistant_robot"
+  | "astronaut"
+  | "humanoid_guide"
+  | "small_creature"
+  | "custom";
+
+export type TripoPipelineMode =
+  | "static_generate"
+  | "generate_then_rig"
+  | "generate_rig_then_animate";
+
+export type TripoRigStatus =
+  | "not_required"
+  | "pending"
+  | "prerigcheck"
+  | "rigging"
+  | "rigged"
+  | "animating"
+  | "animated"
+  | "failed";
+
 export type TripoReferenceImage = {
   name: string;
   type: string;
@@ -38,6 +72,9 @@ export type TripoPromptPreset = {
   id: string;
   label: string;
   prompt: string;
+  assetType?: TripoAssetType;
+  assetCategory?: TripoAssetCategory;
+  defaultPipelineMode?: TripoPipelineMode;
 };
 
 export type TripoCacheEntry = {
@@ -48,9 +85,98 @@ export type TripoCacheEntry = {
   prompt?: string;
   referenceImage?: TripoReferenceImage | null;
   modelUrl: string | null;
+  assetType?: TripoAssetType;
+  assetCategory?: TripoAssetCategory;
+  pipelineMode?: TripoPipelineMode;
+  rigStatus?: TripoRigStatus;
+  rigTaskId?: string;
+  animationTaskId?: string;
+  riggedModelUrl?: string | null;
+  animatedModelUrl?: string | null;
   raw: Record<string, unknown>;
   cachedAt: number;
   expiresAt: number;
+};
+
+export type TripoAnimationKind = "prerigcheck" | "rig" | "retarget";
+
+export type TripoAnimationStatus = TripoTaskStatus;
+
+export type TripoAnimationPresetId =
+  | "robot_idle"
+  | "robot_pointing"
+  | "guide_wave"
+  | "guide_pointing"
+  | "walk_loop";
+
+export type TripoAnimationPreset = {
+  id: TripoAnimationPresetId;
+  label: string;
+  targetAssetTypes: TripoAssetType[];
+  motionHint: string;
+  tripoAnimation: string;
+  fallbackTripoAnimation?: string;
+};
+
+export type TripoAnimationCreateTaskResponse = {
+  taskId: string;
+  kind: TripoAnimationKind;
+  status: TripoAnimationStatus;
+  rigStatus: TripoRigStatus;
+  mock: boolean;
+  modelUrl: string | null;
+  riggedModelUrl: string | null;
+  animatedModelUrl: string | null;
+  raw: Record<string, unknown>;
+  message: string;
+};
+
+export type TripoAnimationTaskResponse = {
+  taskId: string;
+  kind: TripoAnimationKind;
+  status: TripoAnimationStatus;
+  rigStatus: TripoRigStatus;
+  mock: boolean;
+  modelUrl: string | null;
+  riggedModelUrl: string | null;
+  animatedModelUrl: string | null;
+  raw: Record<string, unknown>;
+};
+
+export type TripoAnimationCacheEntry = {
+  taskId: string;
+  sourceTaskId?: string;
+  sourceModelUrl?: string;
+  kind: TripoAnimationKind;
+  assetType?: TripoAssetType;
+  presetId?: TripoAnimationPresetId;
+  status: TripoAnimationStatus;
+  rigStatus: TripoRigStatus;
+  modelUrl: string | null;
+  riggedModelUrl: string | null;
+  animatedModelUrl: string | null;
+  raw: Record<string, unknown>;
+  mock: boolean;
+  cachedAt: number;
+  expiresAt: number;
+};
+
+export type TripoAssetPipelineResult = {
+  ok: boolean;
+  assetCategory: TripoAssetCategory;
+  assetType: TripoAssetType;
+  pipelineMode: TripoPipelineMode;
+  mock: boolean;
+  generateTaskId?: string;
+  rigTaskId?: string;
+  animationTaskId?: string;
+  status: string;
+  rigStatus?: TripoRigStatus;
+  modelUrl?: string | null;
+  riggedModelUrl?: string | null;
+  animatedModelUrl?: string | null;
+  message: string;
+  raw?: unknown;
 };
 
 export const TRIPO_MAX_PROMPT_LENGTH = 800;

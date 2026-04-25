@@ -5,10 +5,26 @@ import {
   validateTripoReferenceImage,
 } from "@/lib/tripo";
 import { setCachedTask } from "@/lib/tripoCache";
-import { TRIPO_MAX_PROMPT_LENGTH } from "@/lib/types";
+import {
+  TripoAssetCategory,
+  TripoAssetType,
+  TRIPO_MAX_PROMPT_LENGTH,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function getOptionalAssetType(value: FormDataEntryValue | unknown) {
+  return typeof value === "string" && value.trim().length > 0
+    ? (value.trim() as TripoAssetType)
+    : undefined;
+}
+
+function getOptionalAssetCategory(value: FormDataEntryValue | unknown) {
+  return typeof value === "string" && value.trim().length > 0
+    ? (value.trim() as TripoAssetCategory)
+    : undefined;
+}
 
 async function parseGenerateRequest(request: Request) {
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
@@ -17,6 +33,8 @@ async function parseGenerateRequest(request: Request) {
     const formData = await request.formData();
     const promptEntry = formData.get("prompt");
     const imageEntry = formData.get("image");
+    const assetTypeEntry = formData.get("assetType");
+    const assetCategoryEntry = formData.get("assetCategory");
     const prompt =
       typeof promptEntry === "string" ? promptEntry.trim() : "";
     const referenceImage =
@@ -25,6 +43,8 @@ async function parseGenerateRequest(request: Request) {
     return {
       prompt,
       referenceImage,
+      assetType: getOptionalAssetType(assetTypeEntry),
+      assetCategory: getOptionalAssetCategory(assetCategoryEntry),
     };
   }
 
@@ -37,6 +57,14 @@ async function parseGenerateRequest(request: Request) {
   return {
     prompt,
     referenceImage: null,
+    assetType:
+      typeof body === "object" && body !== null
+        ? getOptionalAssetType(body.assetType)
+        : undefined,
+    assetCategory:
+      typeof body === "object" && body !== null
+        ? getOptionalAssetCategory(body.assetCategory)
+        : undefined,
   };
 }
 
@@ -45,6 +73,8 @@ export async function POST(request: Request) {
     | {
         prompt: string;
         referenceImage: File | null;
+        assetType?: TripoAssetType;
+        assetCategory?: TripoAssetCategory;
       }
     | null = null;
 
@@ -63,6 +93,8 @@ export async function POST(request: Request) {
 
   const promptValue = parsedRequest.prompt;
   const referenceImage = parsedRequest.referenceImage;
+  const assetType = parsedRequest.assetType;
+  const assetCategory = parsedRequest.assetCategory;
 
   if (!referenceImage && !promptValue) {
     return NextResponse.json(
@@ -109,6 +141,8 @@ export async function POST(request: Request) {
         prompt: promptValue,
         inputMode: result.inputMode,
         referenceImage: result.referenceImage,
+        assetType,
+        assetCategory,
       },
     };
 
@@ -121,6 +155,9 @@ export async function POST(request: Request) {
       inputMode: result.inputMode,
       prompt: promptValue,
       referenceImage: result.referenceImage,
+      assetType,
+      assetCategory,
+      rigStatus: assetCategory === "static" ? "not_required" : undefined,
     });
 
     return NextResponse.json({
@@ -131,6 +168,9 @@ export async function POST(request: Request) {
       taskId: result.taskId,
       status: result.status,
       prompt: promptValue,
+      assetType,
+      assetCategory,
+      rigStatus: assetCategory === "static" ? "not_required" : undefined,
       message: result.message,
       raw,
     });

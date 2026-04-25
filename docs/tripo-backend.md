@@ -10,6 +10,9 @@ panels, storage props, tools, and helper robot variants.
 Current prompt presets are defined in `src/lib/tripoPresets.ts` and exported
 through `src/lib/tripo.ts`.
 
+The dual-track static vs. riggable character pipeline is documented in
+`docs/tripo-animation.md`.
+
 ## Required Reading
 
 These official docs were reviewed before implementation:
@@ -76,6 +79,8 @@ most interesting future option for clean topology and real-time workflows, while
 `v3.1-20260211` targets higher fidelity assets.
 
 ## API Usage
+
+For rigging and animation debug routes, see `docs/tripo-animation.md`.
 
 ### `POST /api/tripo/generate`
 

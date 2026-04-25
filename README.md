@@ -1,5 +1,38 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Team Collaboration
+
+Quick start:
+
+```bash
+git clone <repo-url>
+cd agentverse-hackathon
+fnm use 24
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Branch workflow:
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b your-branch-name
+```
+
+Before pushing:
+
+```bash
+npm run build
+git add .
+git commit -m "feat: short description"
+git push origin your-branch-name
+```
+
+Merge rule:
+Open PR to `main`. `main` should always build.
+
 ## Getting Started
 
 First, run the development server:

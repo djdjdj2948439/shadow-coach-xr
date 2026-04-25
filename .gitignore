@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+test-results/
 
 # next.js
 /.next/
@@ -19,10 +20,14 @@
 
 # production
 /build
+/dist/
 
 # misc
 .DS_Store
 *.pem
+*.pyc
+__pycache__/
+tripo-output/
 
 # debug
 npm-debug.log*
@@ -38,6 +43,10 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# tooling
+.turbo/
+.venv/
 
 # typescript
 *.tsbuildinfo

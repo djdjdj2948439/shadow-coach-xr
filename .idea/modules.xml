@@ -2,7 +2,11 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+<<<<<<< HEAD
       <module fileurl="file://$PROJECT_DIR$/.idea/shadow-coach-xr.iml" filepath="$PROJECT_DIR$/.idea/shadow-coach-xr.iml" />
+=======
+      <module fileurl="file://$PROJECT_DIR$/.idea/GitHUB.iml" filepath="$PROJECT_DIR$/.idea/GitHUB.iml" />
+>>>>>>> 01ca10a78ad020541c2c15979fd1ced587045016
     </modules>
   </component>
 </project>

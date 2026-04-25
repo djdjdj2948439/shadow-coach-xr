@@ -357,6 +357,12 @@ function getRiggablePresetIdForAssetType(
   }
 }
 
+function looksLikeRiggablePrompt(prompt: string) {
+  return /\b(robot|astronaut|humanoid|guide|creature|character)\b/i.test(
+    prompt,
+  );
+}
+
 function clampPromptText(value: string) {
   const normalizedValue = value.replace(/\s+/g, " ").trim();
 
@@ -577,6 +583,9 @@ export default function TripoAssetGenerator() {
     !isRiggableGenerating;
   const progress = activeTask ? getProgress(activeTask.raw) : null;
   const currentRiggablePreset = RIGGABLE_ASSET_PRESETS[selectedRiggablePreset];
+  const staticPromptLooksRiggable = looksLikeRiggablePrompt(trimmedPrompt);
+  const canGenerateStatic =
+    canGenerate && (!trimmedPrompt || !staticPromptLooksRiggable);
   const selectedAnimationPreset =
     Object.values(TRIPO_ANIMATION_PRESETS).find(
       (preset) => preset.id === selectedAnimationPresetId,
@@ -796,7 +805,12 @@ export default function TripoAssetGenerator() {
   }
 
   async function handleGenerate() {
-    if (!canGenerate) {
+    if (!canGenerateStatic) {
+      if (staticPromptLooksRiggable) {
+        setError(
+          "This prompt looks like a riggable character. Use the Riggable Character Generator below instead of the static props pipeline.",
+        );
+      }
       return;
     }
 
@@ -1713,7 +1727,7 @@ export default function TripoAssetGenerator() {
                     <button
                       type="button"
                       onClick={() => void handleGenerate()}
-                      disabled={!canGenerate}
+                      disabled={!canGenerateStatic}
                       className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
                     >
                       {isGenerating ? (
@@ -1742,6 +1756,14 @@ export default function TripoAssetGenerator() {
                       </span>
                     ) : null}
                   </div>
+
+                  {staticPromptLooksRiggable ? (
+                    <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4 text-sm text-amber-100">
+                      This prompt looks like a riggable character. Use the
+                      Riggable Character Generator below for robots,
+                      astronauts, humanoid guides, or creatures.
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

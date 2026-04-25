@@ -18,7 +18,7 @@ const bodyFont = IBM_Plex_Sans({
 export const metadata = {
   title: "Tripo3D Debug Console",
   description:
-    "Debug ISS-themed asset generation through secure server-side Tripo API routes.",
+    "Debug ISS-themed text and image-assisted asset generation through secure server-side Tripo API routes.",
 };
 
 export default function TripoPage() {
@@ -39,14 +39,15 @@ export default function TripoPage() {
               className="mt-4 text-4xl font-semibold tracking-[0.02em] text-white sm:text-5xl"
               style={{ fontFamily: "var(--font-tripo-display)" }}
             >
-              Debug ISS asset generation without touching the main scene
+              Debug ISS asset generation from text or image without touching the main scene
             </h1>
             <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300 sm:text-lg">
               This isolated route is only for Tripo backend testing and asset
               inspection. It generates ISS-themed assets through secure
-              server-side routes, surfaces task status and model URLs, and stays
-              separate from Member B's main 3D viewer and Member C's learning
-              systems.
+              server-side routes, supports both prompt-only and reference-image
+              workflows, surfaces task status and model URLs, and stays
+              separate from Member B&apos;s main 3D viewer and Member C&apos;s
+              learning systems.
             </p>
           </div>
           <Link

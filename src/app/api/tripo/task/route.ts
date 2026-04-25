@@ -47,6 +47,9 @@ export async function GET(request: Request) {
       modelUrl: result.modelUrl,
       raw: result.raw,
       mock: result.mock,
+      inputMode: cachedEntry?.inputMode,
+      prompt: cachedEntry?.prompt,
+      referenceImage: cachedEntry?.referenceImage ?? null,
     });
 
     return NextResponse.json({

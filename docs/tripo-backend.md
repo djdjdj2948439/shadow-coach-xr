@@ -57,9 +57,12 @@ Confirmed from the official docs:
 
 - Authentication uses `Authorization: Bearer <TRIPO_API_KEY>`.
 - The task creation endpoint is `POST https://api.tripo3d.ai/v2/openapi/task`.
+- The image upload endpoint is `POST https://api.tripo3d.ai/v2/openapi/upload`.
 - Task polling uses `GET https://api.tripo3d.ai/v2/openapi/task/{task_id}`.
 - The task must be queried with the same API key that created it.
 - `text_to_model` accepts `prompt`, while `model_version` is optional.
+- The official Python SDK shows `image_to_model` sending a `file` object with
+  `type` and `file_token` after upload.
 - Official text-to-model prompt length is up to 1024 characters, but this app
   intentionally enforces a stricter 800-character UI limit.
 - Task output may include `output.model`, `output.base_model`,
@@ -76,7 +79,10 @@ most interesting future option for clean topology and real-time workflows, while
 
 ### `POST /api/tripo/generate`
 
-Creates a text-to-model Tripo task through the backend.
+Creates either a text-to-model or image-to-model Tripo task through the
+backend.
+
+Text-only JSON request:
 
 ```json
 {
@@ -91,6 +97,23 @@ curl -X POST http://localhost:3000/api/tripo/generate \
   -H "Content-Type: application/json" \
   -d '{"prompt":"A realistic ISS module interior with control panels, floating tools and storage bags"}'
 ```
+
+Image-assisted multipart request:
+
+```bash
+curl -X POST http://localhost:3000/api/tripo/generate \
+  -F 'prompt=A compact astronaut tool kit for a browser-based WebXR training scene' \
+  -F 'image=@/absolute/path/to/reference.png'
+```
+
+Current debug-page validation rules:
+
+- `prompt` stays optional when an image is attached
+- prompt length is capped at 800 characters
+- reference image types are `JPEG`, `PNG`, and `WEBP`
+- reference image size is capped at 20MB in this app
+- the frontend never uploads directly to Tripo; it only sends the file to our
+  backend route
 
 ### `GET /api/tripo/task?taskId=xxx`
 
@@ -119,7 +142,8 @@ Current UI supports:
 
 - preset selector
 - prompt editor
-- generate button
+- reference image upload
+- generate button for text-only or text + image
 - auto polling
 - manual refresh
 - result card
@@ -144,6 +168,12 @@ Member B can call:
 
 Member B should use the returned `modelUrl` to load GLB or model assets into
 the Three.js / React Three Fiber / WebXR scene that B owns.
+
+If B wants image-assisted generation, B can submit `multipart/form-data` to
+`POST /api/tripo/generate` with:
+
+- `prompt`
+- `image`
 
 Member C should not depend on Tripo directly. If C needs asset references for
 evaluation or experiment metadata, C should only consume final asset IDs or
@@ -194,7 +224,7 @@ Notes:
 - On Vercel serverless infrastructure, memory cache is not guaranteed across
   invocations or instances.
 - Future work can move cache state to Vercel KV, Upstash, or Supabase.
-- Image-to-3D is not wired into the frontend yet; future work can use the Upload
-  API with `multipart/form-data`.
+- The current frontend supports a single reference image only; multi-view image
+  generation is still future work.
 - Post-process conversion is not wired yet; future work can trigger
   `convert_model` for formats such as `OBJ`, `FBX`, `USDZ`, or `GLTF`.

@@ -1,12 +1,19 @@
 import {
   TripoCreateTaskResponse,
+  TripoInputMode,
+  TripoReferenceImage,
   TripoTaskStatus,
   TripoTaskStatusResponse,
+  TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES,
+  TRIPO_REFERENCE_IMAGE_MAX_BYTES,
 } from "@/lib/types";
 import { TRIPO_PROMPT_PRESETS } from "@/lib/tripoPresets";
 
 const TRIPO_API_BASE_URL = "https://api.tripo3d.ai/v2/openapi";
 const TRIPO_TASK_ENDPOINT = `${TRIPO_API_BASE_URL}/task`;
+const TRIPO_UPLOAD_ENDPOINT = `${TRIPO_API_BASE_URL}/upload`;
+const TEXT_TO_MODEL_TASK = "text_to_model";
+const IMAGE_TO_MODEL_TASK = "image_to_model";
 
 const MODEL_URL_PATHS = [
   ["output", "model"],
@@ -16,17 +23,29 @@ const MODEL_URL_PATHS = [
   ["output", "glb_url"],
   ["output", "outputUrl"],
   ["output", "output_url"],
+  ["output", "model", "url"],
+  ["output", "pbr_model", "url"],
   ["data", "output", "model"],
   ["data", "output", "pbr_model"],
   ["data", "output", "model_url"],
   ["data", "output", "glb"],
   ["data", "output", "glb_url"],
+  ["data", "output", "model", "url"],
+  ["data", "output", "pbr_model", "url"],
   ["result", "output", "model"],
   ["result", "output", "pbr_model"],
   ["result", "output", "model_url"],
   ["result", "output", "glb"],
   ["result", "output", "glb_url"],
+  ["result", "output", "model", "url"],
+  ["result", "output", "pbr_model", "url"],
   ["result", "model"],
+  ["result", "model", "url"],
+  ["result", "pbr_model", "url"],
+  ["data", "result", "model", "url"],
+  ["data", "result", "pbr_model", "url"],
+  ["data", "result", "output", "model", "url"],
+  ["data", "result", "output", "pbr_model", "url"],
   ["model"],
   ["modelUrl"],
 ] as const;
@@ -50,6 +69,12 @@ const STATUS_PATHS = [
   ["data", "state"],
   ["result", "status"],
   ["result", "state"],
+] as const;
+
+const IMAGE_TOKEN_PATHS = [
+  ["image_token"],
+  ["data", "image_token"],
+  ["result", "image_token"],
 ] as const;
 
 function asObject(value: unknown): Record<string, unknown> {
@@ -142,7 +167,7 @@ function getErrorMessage(payload: unknown) {
 }
 
 function getTaskId(raw: unknown) {
-  return getFirstStringFromPaths(raw, TASK_ID_PATHS) ?? `mock-${Date.now()}`;
+  return getFirstStringFromPaths(raw, TASK_ID_PATHS) ?? `mock-text-${Date.now()}`;
 }
 
 function getRawStatus(raw: unknown) {
@@ -251,11 +276,26 @@ function extractApiResponseData(payload: unknown) {
       : raw;
 }
 
+function buildMockTaskId(inputMode: TripoInputMode) {
+  return `mock-${inputMode}-${Date.now()}`;
+}
+
+function getMockTaskTimestamp(taskId: string) {
+  const timestamp = taskId.match(/(\d{10,})$/)?.[1] ?? "";
+  const parsedTimestamp = Number.parseInt(timestamp, 10);
+
+  return Number.isNaN(parsedTimestamp) ? Date.now() : parsedTimestamp;
+}
+
+function getMockInputMode(taskId: string): TripoInputMode {
+  return taskId.includes("-image-") ? "image" : "text";
+}
+
 function buildMockTaskStatus(taskId: string): TripoTaskStatusResponse {
-  const mockTimestamp = Number.parseInt(taskId.replace("mock-", ""), 10);
-  const ageMs = Number.isNaN(mockTimestamp)
-    ? Number.POSITIVE_INFINITY
-    : Date.now() - mockTimestamp;
+  const ageMs = Date.now() - getMockTaskTimestamp(taskId);
+  const inputMode = getMockInputMode(taskId);
+  const taskType =
+    inputMode === "image" ? IMAGE_TO_MODEL_TASK : TEXT_TO_MODEL_TASK;
 
   let status: TripoTaskStatus = "queued";
   let modelUrl: string | null = null;
@@ -279,7 +319,7 @@ function buildMockTaskStatus(taskId: string): TripoTaskStatusResponse {
       code: 0,
       data: {
         task_id: taskId,
-        type: "text_to_model",
+        type: taskType,
         status,
         output: modelUrl
           ? {
@@ -333,6 +373,82 @@ async function requestTripo(path: string, init: RequestInit) {
   return payload;
 }
 
+export function describeTripoReferenceImage(file: File): TripoReferenceImage {
+  return {
+    name: file.name || "reference-image",
+    type: file.type || "application/octet-stream",
+    size: file.size,
+  };
+}
+
+export function validateTripoReferenceImage(file: File) {
+  if (!file.size) {
+    return "Reference image is empty.";
+  }
+
+  if (
+    file.type &&
+    !TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES.includes(
+      file.type as (typeof TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES)[number],
+    )
+  ) {
+    return "Reference image must be JPEG, PNG, or WEBP.";
+  }
+
+  if (file.size > TRIPO_REFERENCE_IMAGE_MAX_BYTES) {
+    return "Reference image must be 20MB or smaller.";
+  }
+
+  return null;
+}
+
+function getReferenceImageFileType(file: File) {
+  const normalizedType = file.type.toLowerCase();
+  const normalizedName = file.name.toLowerCase();
+
+  if (normalizedType === "image/png" || normalizedName.endsWith(".png")) {
+    return "png";
+  }
+
+  if (normalizedType === "image/webp" || normalizedName.endsWith(".webp")) {
+    return "webp";
+  }
+
+  return "jpg";
+}
+
+async function uploadTripoReferenceImage(file: File) {
+  const formData = new FormData();
+  const fileType = getReferenceImageFileType(file);
+  const fileName = file.name || `tripo-reference.${fileType}`;
+
+  formData.append("file", file, fileName);
+
+  const payload = await requestTripo("/upload", {
+    method: "POST",
+    body: formData,
+  });
+  const imageToken = getFirstStringFromPaths(payload, IMAGE_TOKEN_PATHS);
+
+  if (!imageToken) {
+    throw new Error(
+      "Tripo image upload succeeded but no image token was returned.",
+    );
+  }
+
+  return imageToken;
+}
+
+export function inferTripoInputMode(raw: unknown): TripoInputMode {
+  const taskType = getFirstStringFromPaths(raw, [
+    ["type"],
+    ["data", "type"],
+    ["result", "type"],
+  ])?.toLowerCase();
+
+  return taskType === IMAGE_TO_MODEL_TASK ? "image" : "text";
+}
+
 export function extractModelUrl(raw: unknown) {
   for (const path of MODEL_URL_PATHS) {
     const candidate = getStringValue(getNestedValue(raw, path));
@@ -342,42 +458,110 @@ export function extractModelUrl(raw: unknown) {
     }
   }
 
-  const output = getNestedValue(raw, ["output"]) ?? getNestedValue(raw, ["data", "output"]);
-  const deepMatch = findStringDeep(output, [
-    "model",
-    "pbr_model",
-    "model_url",
-    "glb",
-    "glb_url",
-    "modelUrl",
-    "outputUrl",
-  ]);
+  const searchRoots = [
+    raw,
+    getNestedValue(raw, ["output"]),
+    getNestedValue(raw, ["data", "output"]),
+    getNestedValue(raw, ["result"]),
+    getNestedValue(raw, ["result", "output"]),
+    getNestedValue(raw, ["data", "result"]),
+    getNestedValue(raw, ["data", "result", "output"]),
+  ];
 
-  return deepMatch ?? null;
+  for (const root of searchRoots) {
+    const deepMatch = findStringDeep(root, [
+      "pbr_model",
+      "model",
+      "glb",
+      "glb_url",
+      "model_url",
+      "modelUrl",
+      "outputUrl",
+      "url",
+    ]);
+
+    if (deepMatch) {
+      return deepMatch;
+    }
+  }
+
+  return null;
 }
 
-export async function createTripoTask(
-  prompt: string,
-): Promise<TripoCreateTaskResponse> {
+export async function createTripoTask({
+  prompt,
+  referenceImage,
+}: {
+  prompt: string;
+  referenceImage?: File | null;
+}): Promise<TripoCreateTaskResponse> {
+  const inputMode: TripoInputMode = referenceImage ? "image" : "text";
+  const referenceImageMeta = referenceImage
+    ? describeTripoReferenceImage(referenceImage)
+    : null;
+
+  if (referenceImage) {
+    const validationError = validateTripoReferenceImage(referenceImage);
+
+    if (validationError) {
+      throw new Error(validationError);
+    }
+  }
+
   if (shouldUseMockTripo()) {
-    const taskId = `mock-${Date.now()}`;
+    const taskId = buildMockTaskId(inputMode);
 
     return {
       taskId,
       status: "queued",
       mock: true,
+      inputMode,
+      referenceImage: referenceImageMeta,
       message:
-        "Using mock Tripo task because USE_MOCK_TRIPO is enabled or TRIPO_API_KEY is missing.",
+        inputMode === "image"
+          ? "Using mock Tripo image task because USE_MOCK_TRIPO is enabled or TRIPO_API_KEY is missing."
+          : "Using mock Tripo text task because USE_MOCK_TRIPO is enabled or TRIPO_API_KEY is missing.",
       raw: {
         code: 0,
         data: {
           task_id: taskId,
           status: "queued",
-          type: "text_to_model",
+          type: inputMode === "image" ? IMAGE_TO_MODEL_TASK : TEXT_TO_MODEL_TASK,
           prompt,
           mock: true,
         },
       },
+    };
+  }
+
+  if (referenceImage) {
+    const imageToken = await uploadTripoReferenceImage(referenceImage);
+    const payload = await requestTripo("/task", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        type: IMAGE_TO_MODEL_TASK,
+        file: {
+          type: getReferenceImageFileType(referenceImage),
+          file_token: imageToken,
+        },
+        ...(prompt ? { prompt } : {}),
+      }),
+    });
+    const status = normalizeStatus(payload);
+
+    return {
+      taskId: getTaskId(payload),
+      status: status === "unknown" ? "queued" : status,
+      mock: false,
+      inputMode,
+      referenceImage: referenceImageMeta,
+      message: prompt
+        ? "Tripo image-to-3D task created successfully with prompt guidance."
+        : "Tripo image-to-3D task created successfully.",
+      raw: asObject(payload),
     };
   }
 
@@ -387,18 +571,19 @@ export async function createTripoTask(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      type: "text_to_model",
+      type: TEXT_TO_MODEL_TASK,
       prompt,
     }),
   });
-
   const status = normalizeStatus(payload);
 
   return {
     taskId: getTaskId(payload),
     status: status === "unknown" ? "queued" : status,
     mock: false,
-    message: "Tripo task created successfully.",
+    inputMode,
+    referenceImage: null,
+    message: "Tripo text-to-3D task created successfully.",
     raw: asObject(payload),
   };
 }
@@ -424,4 +609,8 @@ export async function getTripoTask(
   };
 }
 
-export { TRIPO_PROMPT_PRESETS, TRIPO_TASK_ENDPOINT };
+export {
+  TRIPO_PROMPT_PRESETS,
+  TRIPO_TASK_ENDPOINT,
+  TRIPO_UPLOAD_ENDPOINT,
+};

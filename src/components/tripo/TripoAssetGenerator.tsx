@@ -7,21 +7,30 @@ import {
   Bot,
   Copy,
   ExternalLink,
+  FileImage,
   LoaderCircle,
   RefreshCcw,
   Server,
   ShieldCheck,
   Sparkles,
+  Upload,
+  X,
 } from "lucide-react";
+import Image from "next/image";
 
 import { TRIPO_PROMPT_PRESETS, TRIPO_PROMPT_PRESET_ORDER } from "@/lib/tripoPresets";
 import {
   isFinalTripoStatus,
   TripoCacheEntry,
+  TripoInputMode,
+  TripoReferenceImage,
   TripoTaskStatus,
+  TRIPO_MAX_PROMPT_LENGTH,
+  TRIPO_REFERENCE_IMAGE_ACCEPT,
+  TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES,
+  TRIPO_REFERENCE_IMAGE_MAX_BYTES,
 } from "@/lib/types";
 
-const MAX_PROMPT_LENGTH = 800;
 const POLL_INTERVAL_MS = 4000;
 const POLL_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -29,6 +38,8 @@ type GenerateApiResponse =
   | {
       ok: true;
       mock: boolean;
+      inputMode: TripoInputMode;
+      referenceImage: TripoReferenceImage | null;
       taskId: string;
       status: TripoTaskStatus;
       prompt: string;
@@ -66,6 +77,8 @@ type ActiveTask = {
   taskId: string;
   status: TripoTaskStatus;
   mock: boolean;
+  inputMode: TripoInputMode;
+  referenceImage: TripoReferenceImage | null;
   modelUrl: string | null;
   prompt: string;
   message: string;
@@ -96,12 +109,7 @@ function getProgress(raw: Record<string, unknown>) {
 }
 
 function getPromptFromRaw(raw: Record<string, unknown>) {
-  const candidates = [
-    raw.prompt,
-    raw.input,
-    raw.data,
-    raw.result,
-  ];
+  const candidates = [raw.prompt, raw.input, raw.request, raw.data, raw.result];
 
   for (const candidate of candidates) {
     if (typeof candidate === "string" && candidate.trim().length > 0) {
@@ -155,10 +163,43 @@ function shortTaskId(taskId: string) {
     : taskId;
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  if (bytes >= 1024) {
+    return `${Math.round(bytes / 1024)} KB`;
+  }
+
+  return `${bytes} B`;
+}
+
+function getEntryInputMode(entry: TripoCacheEntry): TripoInputMode {
+  if (entry.inputMode) {
+    return entry.inputMode;
+  }
+
+  const type =
+    typeof entry.raw.type === "string"
+      ? entry.raw.type
+      : typeof (entry.raw.data as Record<string, unknown> | undefined)?.type ===
+          "string"
+        ? ((entry.raw.data as Record<string, unknown>).type as string)
+        : "";
+
+  return type === "image_to_model" ? "image" : "text";
+}
+
 export default function TripoAssetGenerator() {
   const [selectedPreset, setSelectedPreset] =
     useState<(typeof TRIPO_PROMPT_PRESET_ORDER)[number]>("ISS_MODULE");
   const [prompt, setPrompt] = useState(TRIPO_PROMPT_PRESETS.ISS_MODULE.prompt);
+  const [referenceImageFile, setReferenceImageFile] = useState<File | null>(null);
+  const [referenceImagePreviewUrl, setReferenceImagePreviewUrl] = useState<
+    string | null
+  >(null);
+  const [fileInputKey, setFileInputKey] = useState(0);
   const [activeTask, setActiveTask] = useState<ActiveTask | null>(null);
   const [cacheEntries, setCacheEntries] = useState<TripoCacheEntry[]>([]);
   const [ttlSeconds, setTtlSeconds] = useState(3600);
@@ -170,11 +211,20 @@ export default function TripoAssetGenerator() {
   const [isPolling, setIsPolling] = useState(false);
   const [pollStartedAt, setPollStartedAt] = useState<number | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (referenceImagePreviewUrl) {
+        URL.revokeObjectURL(referenceImagePreviewUrl);
+      }
+    };
+  }, [referenceImagePreviewUrl]);
+
   const promptLength = prompt.length;
   const trimmedPrompt = prompt.trim();
+  const hasReferenceImage = Boolean(referenceImageFile);
   const canGenerate =
-    trimmedPrompt.length > 0 &&
-    promptLength <= MAX_PROMPT_LENGTH &&
+    (trimmedPrompt.length > 0 || hasReferenceImage) &&
+    promptLength <= TRIPO_MAX_PROMPT_LENGTH &&
     !isGenerating;
   const progress = activeTask ? getProgress(activeTask.raw) : null;
 
@@ -262,15 +312,32 @@ export default function TripoAssetGenerator() {
     setCopyState(null);
 
     try {
-      const response = await fetch("/api/tripo/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          prompt: trimmedPrompt,
-        }),
-      });
+      const response = await (async () => {
+        if (referenceImageFile) {
+          const body = new FormData();
+
+          if (trimmedPrompt) {
+            body.append("prompt", trimmedPrompt);
+          }
+
+          body.append("image", referenceImageFile);
+
+          return fetch("/api/tripo/generate", {
+            method: "POST",
+            body,
+          });
+        }
+
+        return fetch("/api/tripo/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            prompt: trimmedPrompt,
+          }),
+        });
+      })();
       const payload = (await response.json()) as GenerateApiResponse;
 
       if (!payload.ok) {
@@ -281,6 +348,8 @@ export default function TripoAssetGenerator() {
         taskId: payload.taskId,
         status: payload.status,
         mock: payload.mock,
+        inputMode: payload.inputMode,
+        referenceImage: payload.referenceImage,
         modelUrl: null,
         prompt: payload.prompt,
         message: payload.message,
@@ -314,6 +383,42 @@ export default function TripoAssetGenerator() {
     } catch {
       setCopyState("Clipboard copy is unavailable in this browser.");
     }
+  }
+
+  function clearReferenceImage() {
+    setReferenceImageFile(null);
+    setReferenceImagePreviewUrl(null);
+    setFileInputKey((current) => current + 1);
+  }
+
+  function handleReferenceImageChange(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    if (
+      file.type &&
+      !TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES.includes(
+        file.type as (typeof TRIPO_REFERENCE_IMAGE_ACCEPTED_MIME_TYPES)[number],
+      )
+    ) {
+      setError("Reference image must be JPEG, PNG, or WEBP.");
+      return;
+    }
+
+    if (file.size > TRIPO_REFERENCE_IMAGE_MAX_BYTES) {
+      setError("Reference image must be 20MB or smaller.");
+      return;
+    }
+
+    setReferenceImagePreviewUrl(URL.createObjectURL(file));
+    setReferenceImageFile(file);
+    setError(null);
+    setInfo(
+      trimmedPrompt
+        ? "Reference image attached. The next request will use image-to-3D with prompt guidance."
+        : "Reference image attached. The next request will use image-to-3D.",
+    );
   }
 
   const refreshCacheEffect = useEffectEvent(() => {
@@ -372,13 +477,14 @@ export default function TripoAssetGenerator() {
               </div>
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                  Generate ISS assets for downstream scene integration
+                  Generate ISS assets from text or text + image
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
-                  Presets, prompt editing, server-side generation, polling, and
-                  result links stay inside this isolated debug page. The
-                  frontend never receives the Tripo API key, and this route does
-                  not implement the main 3D scene.
+                  Presets, prompt editing, optional reference image upload,
+                  server-side generation, polling, and result links stay inside
+                  this isolated debug page. The frontend never receives the
+                  Tripo API key, and this route does not implement the main 3D
+                  scene.
                 </p>
               </div>
             </div>
@@ -439,64 +545,156 @@ export default function TripoAssetGenerator() {
             })}
           </div>
 
-          <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/70 p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <label
-                htmlFor="tripo-prompt"
-                className="text-sm font-medium text-slate-100"
-              >
-                Prompt editor
-              </label>
-              <div
-                className={`rounded-full px-3 py-1 text-xs ${
-                  promptLength > MAX_PROMPT_LENGTH
-                    ? "bg-rose-500/15 text-rose-200"
-                    : "bg-white/8 text-slate-300"
-                }`}
-              >
-                {promptLength}/{MAX_PROMPT_LENGTH}
+          <div className="grid gap-4 xl:grid-cols-[minmax(260px,0.72fr)_minmax(0,1fr)]">
+            <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/70 p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-medium text-slate-100">
+                    Reference image
+                  </div>
+                  <p className="mt-1 text-xs leading-6 text-slate-400">
+                    Optional. If attached, the backend uploads the image to
+                    Tripo and switches generation to <code>image_to_model</code>.
+                  </p>
+                </div>
+                {referenceImageFile ? (
+                  <button
+                    type="button"
+                    onClick={clearReferenceImage}
+                    className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs font-medium text-slate-200 transition hover:bg-white/10"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <label className="block cursor-pointer rounded-[1.25rem] border border-dashed border-sky-400/25 bg-sky-400/6 p-4 transition hover:border-sky-300/40 hover:bg-sky-400/10">
+                  <input
+                    key={fileInputKey}
+                    type="file"
+                    accept={TRIPO_REFERENCE_IMAGE_ACCEPT}
+                    className="hidden"
+                    onChange={(event) => {
+                      handleReferenceImageChange(event.target.files?.[0] ?? null);
+                    }}
+                  />
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-xl border border-sky-300/20 bg-sky-300/10 p-3 text-sky-100">
+                      <Upload className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-medium text-white">
+                        Upload reference image
+                      </div>
+                      <div className="mt-1 text-xs text-slate-300">
+                        JPEG / PNG / WEBP up to 20MB
+                      </div>
+                    </div>
+                  </div>
+                </label>
+
+                {referenceImagePreviewUrl ? (
+                  <div className="grid gap-4 md:grid-cols-[140px_minmax(0,1fr)]">
+                    <div className="overflow-hidden rounded-[1.25rem] border border-white/10 bg-slate-950/80">
+                      <Image
+                        src={referenceImagePreviewUrl}
+                        alt="Selected Tripo reference"
+                        width={320}
+                        height={320}
+                        unoptimized
+                        className="h-36 w-full object-cover"
+                      />
+                    </div>
+                    <div className="rounded-[1.25rem] border border-white/10 bg-slate-950/80 p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-white">
+                        <FileImage className="h-4 w-4 text-sky-200" />
+                        {referenceImageFile?.name}
+                      </div>
+                      <div className="mt-3 space-y-2 text-xs text-slate-400">
+                        <div>Type: {referenceImageFile?.type || "Unknown"}</div>
+                        <div>
+                          Size:{" "}
+                          {referenceImageFile
+                            ? formatFileSize(referenceImageFile.size)
+                            : "Unknown"}
+                        </div>
+                        <div>
+                          Mode after submit:{" "}
+                          <span className="text-sky-100">Text + image</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-[1.25rem] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-slate-400">
+                    No reference image attached. Generate with prompt only, or
+                    add an image to guide the model.
+                  </div>
+                )}
               </div>
             </div>
-            <textarea
-              id="tripo-prompt"
-              value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={7}
-              className="w-full resize-none rounded-[1.25rem] border border-white/10 bg-slate-950/80 px-4 py-4 text-sm leading-7 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-400/40 focus:ring-2 focus:ring-sky-400/15"
-              placeholder="Describe the WebXR asset you want to generate..."
-            />
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={() => void handleGenerate()}
-                disabled={!canGenerate}
-                className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
-              >
-                {isGenerating ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="h-4 w-4" />
-                )}
-                Generate Asset
-              </button>
-              <button
-                type="button"
-                onClick={() => void refreshTask(true)}
-                disabled={!activeTask || isRefreshing}
-                className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isRefreshing ? (
-                  <LoaderCircle className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCcw className="h-4 w-4" />
-                )}
-                Manual Refresh
-              </button>
-              {isPolling ? (
-                <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs text-sky-100">
-                  Auto polling every 4s
-                </span>
-              ) : null}
+
+            <div className="rounded-[1.5rem] border border-white/10 bg-slate-900/70 p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <label
+                  htmlFor="tripo-prompt"
+                  className="text-sm font-medium text-slate-100"
+                >
+                  Prompt guidance
+                </label>
+                <div
+                  className={`rounded-full px-3 py-1 text-xs ${
+                    promptLength > TRIPO_MAX_PROMPT_LENGTH
+                      ? "bg-rose-500/15 text-rose-200"
+                      : "bg-white/8 text-slate-300"
+                  }`}
+                >
+                  {promptLength}/{TRIPO_MAX_PROMPT_LENGTH}
+                </div>
+              </div>
+              <textarea
+                id="tripo-prompt"
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                rows={7}
+                className="w-full resize-none rounded-[1.25rem] border border-white/10 bg-slate-950/80 px-4 py-4 text-sm leading-7 text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-sky-400/40 focus:ring-2 focus:ring-sky-400/15"
+                placeholder="Describe the WebXR asset you want to generate. Prompt is optional when a reference image is attached."
+              />
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handleGenerate()}
+                  disabled={!canGenerate}
+                  className="inline-flex items-center gap-2 rounded-full bg-sky-400 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  {isGenerating ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {hasReferenceImage ? "Generate from Text + Image" : "Generate from Text"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void refreshTask(true)}
+                  disabled={!activeTask || isRefreshing}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-5 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isRefreshing ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="h-4 w-4" />
+                  )}
+                  Manual Refresh
+                </button>
+                {isPolling ? (
+                  <span className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs text-sky-100">
+                    Auto polling every 4s
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -523,6 +721,9 @@ export default function TripoAssetGenerator() {
                     )}`}
                   >
                     {activeTask.status}
+                  </span>
+                  <span className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs uppercase tracking-[0.22em] text-slate-300">
+                    {activeTask.inputMode === "image" ? "Text + image" : "Text only"}
                   </span>
                   {activeTask.mock ? (
                     <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.22em] text-amber-100">
@@ -555,12 +756,37 @@ export default function TripoAssetGenerator() {
                   </div>
                 </div>
 
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                      Generation Mode
+                    </div>
+                    <div className="mt-2 text-sm text-slate-100">
+                      {activeTask.inputMode === "image"
+                        ? "Image-guided generation"
+                        : "Prompt-only generation"}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase tracking-[0.22em] text-slate-500">
+                      Reference Image
+                    </div>
+                    <div className="mt-2 text-sm text-slate-100">
+                      {activeTask.referenceImage
+                        ? `${activeTask.referenceImage.name} (${formatFileSize(
+                            activeTask.referenceImage.size,
+                          )})`
+                        : "None"}
+                    </div>
+                  </div>
+                </div>
+
                 <div className="mt-5">
                   <div className="text-xs uppercase tracking-[0.22em] text-slate-500">
                     Prompt
                   </div>
                   <p className="mt-2 text-sm leading-7 text-slate-300">
-                    {activeTask.prompt || "Prompt not stored for this cached task."}
+                    {activeTask.prompt || "No prompt guidance was submitted."}
                   </p>
                 </div>
               </div>
@@ -653,8 +879,10 @@ export default function TripoAssetGenerator() {
                       taskId: entry.taskId,
                       status: entry.status,
                       mock: entry.mock,
+                      inputMode: getEntryInputMode(entry),
+                      referenceImage: entry.referenceImage ?? null,
                       modelUrl: entry.modelUrl,
-                      prompt: getPromptFromRaw(entry.raw),
+                      prompt: entry.prompt ?? getPromptFromRaw(entry.raw),
                       message: "Loaded from cache.",
                       raw: entry.raw,
                       cached: true,
@@ -671,8 +899,16 @@ export default function TripoAssetGenerator() {
                       <div className="text-sm font-medium text-white">
                         {shortTaskId(entry.taskId)}
                       </div>
-                      <div className="mt-1 text-xs text-slate-500">
-                        {entry.modelUrl ? "Model URL cached" : "Waiting for model URL"}
+                      <div className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        <span>
+                          {entry.modelUrl ? "Model URL cached" : "Waiting for model URL"}
+                        </span>
+                        <span>•</span>
+                        <span>
+                          {getEntryInputMode(entry) === "image"
+                            ? "Text + image"
+                            : "Text only"}
+                        </span>
                       </div>
                     </div>
                     <span
@@ -692,10 +928,11 @@ export default function TripoAssetGenerator() {
         <section className="rounded-[2rem] border border-white/10 bg-slate-950/90 p-6 shadow-[0_24px_64px_rgba(3,7,18,0.45)]">
           <h3 className="text-lg font-semibold text-white">Viewer status</h3>
           <p className="mt-2 text-sm leading-7 text-slate-400">
-            No existing GLB viewer or XR scene loader was found in this repo, so
-            this page currently ships with a result card and direct model URL
-            actions. The next step is wiring the returned <code>modelUrl</code>{" "}
-            into a WebXR or Three.js viewer component.
+            This debug page now supports both text-only and image-assisted
+            Tripo generation. No existing GLB viewer or XR scene loader was
+            found in this repo, so the current integration still stops at
+            stable <code>modelUrl</code> output for downstream Member B scene
+            loading.
           </p>
         </section>
       </aside>

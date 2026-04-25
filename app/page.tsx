@@ -1,101 +1,72 @@
-"use client"
+"use client";
+import { Canvas, useFrame } from "@react-three/fiber";
+import { OrbitControls, Stars, PerspectiveCamera } from "@react-three/drei";
+import { useRef, useState, useEffect } from "react";
+import * as THREE from "three";
 
-import { useState } from "react"
-import { HabitatSceneClient } from "@/components/scene-loader"
-import { DataBootstrap } from "@/components/data-bootstrap"
-import { ModeSwitcher } from "@/components/mode-switcher"
-import { ModePanel } from "@/components/mode-panel"
-import { TaskSelector } from "@/components/task-selector"
-import { GenerationPanel } from "@/components/generation-panel"
-import { MetricsPanel } from "@/components/metrics-panel"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Activity, Boxes, Cpu } from "lucide-react"
+// 1. 建立一個獨立的機器人組件
+function Robot() {
+  const robotRef = useRef<THREE.Mesh>(null);
 
-export default function Page() {
-  const [tab, setTab] = useState<"generate" | "metrics">("generate")
+  // 記錄按鍵狀態
+  const [keys, setKeys] = useState({ w: false, a: false, s: false, d: false });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => setKeys((k) => ({ ...k, [e.key.toLowerCase()]: true }));
+    const handleKeyUp = (e: KeyboardEvent) => setKeys((k) => ({ ...k, [e.key.toLowerCase()]: false }));
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
+  }, []);
+
+  // 每幀更新機器人位置 (微重力環境下的簡單平移)
+  useFrame(() => {
+    if (!robotRef.current) return;
+    const speed = 0.05; // 移動速度
+    if (keys.w) robotRef.current.position.z -= speed; // 前進
+    if (keys.s) robotRef.current.position.z += speed; // 後退
+    if (keys.a) robotRef.current.position.x -= speed; // 左移
+    if (keys.d) robotRef.current.position.x += speed; // 右移
+  });
 
   return (
-    <main className="flex min-h-screen flex-col bg-background">
-      <DataBootstrap />
+    <mesh ref={robotRef} position={[0, 0, 0]}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshStandardMaterial color="blue" />
+    </mesh>
+  );
+}
 
-      {/* Top brand bar */}
-      <header className="flex items-center justify-between border-b border-border/60 px-5 py-3">
-        <div className="flex items-center gap-3">
-          <div className="grid h-8 w-8 place-items-center rounded-md bg-primary/15 text-primary glow-cyan">
-            <Cpu className="h-4 w-4" />
-          </div>
-          <div>
-            <div className="font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">
-              ORBITAL · SKILL · HABITAT
-            </div>
-            <div className="text-base font-semibold tracking-tight">
-              自演化的微重力训练场
-            </div>
-          </div>
-        </div>
-        <div className="hidden items-center gap-2 md:flex">
-          <Badge variant="outline" className="font-mono">
-            <Activity className="mr-1 h-3 w-3" />
-            sim 20Hz
-          </Badge>
-          <Badge variant="outline" className="font-mono">
-            <Boxes className="mr-1 h-3 w-3" />
-            Tripo3D · live
-          </Badge>
-          <Badge variant="default" className="font-mono">
-            v0 · phase 3
-          </Badge>
-        </div>
-      </header>
+export default function Experience() {
+  return (
+    <div className="w-full h-screen bg-black">
+      <Canvas>
+        <Stars radius={100} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
+        <ambientLight intensity={0.5} />
+        <pointLight position={[10, 10, 10]} />
 
-      {/* Mode bar */}
-      <div className="border-b border-border/60 bg-card/30 px-5 py-2">
-        <ModeSwitcher />
+        {/* 2. 使用剛剛寫好的 Robot 組件 */}
+        <Robot />
+
+        {/* 任務目標：漂浮的工具 */}
+        <mesh position={[2, 1, -3]}>
+          <sphereGeometry args={[0.3, 32, 32]} />
+          <meshStandardMaterial color="orange" />
+        </mesh>
+
+        <PerspectiveCamera makeDefault position={[5, 5, 5]} />
+        <OrbitControls />
+      </Canvas>
+
+      {/* 操作提示 UI */}
+      <div className="absolute bottom-10 left-10 text-white bg-white/20 p-4 rounded-lg pointer-events-none">
+        <h1 className="font-bold mb-2">Orbital Skill Habitat</h1>
+        <p>控制方式: W, A, S, D 移動藍色機器人</p>
+        <p>滑鼠左鍵: 旋轉視角</p>
       </div>
-
-      {/* Main grid: scene + side panels */}
-      <div className="grid flex-1 gap-3 p-3 lg:grid-cols-[1fr_380px]">
-        {/* Left: 3D scene + bottom tabs */}
-        <div className="flex min-h-[60vh] flex-col gap-3">
-          <div className="flex-1 min-h-[420px]">
-            <HabitatSceneClient />
-          </div>
-          <div className="rounded-lg border border-border bg-card/40">
-            <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="flex flex-col">
-              <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                <TabsList>
-                  <TabsTrigger value="generate">生成与资产</TabsTrigger>
-                  <TabsTrigger value="metrics">指标与评估</TabsTrigger>
-                </TabsList>
-                <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                  Phase 1 · 2 · 3 整合
-                </div>
-              </div>
-              <TabsContent value="generate" className="max-h-[44vh] overflow-auto scrollbar-thin">
-                <GenerationPanel />
-              </TabsContent>
-              <TabsContent value="metrics" className="max-h-[44vh] overflow-auto scrollbar-thin">
-                <MetricsPanel />
-              </TabsContent>
-            </Tabs>
-          </div>
-        </div>
-
-        {/* Right: task selector + active mode panel */}
-        <aside className="flex flex-col gap-3">
-          <div className="rounded-lg border border-border bg-card/40 p-3">
-            <TaskSelector />
-          </div>
-          <div className="flex-1 min-h-[420px] overflow-hidden rounded-lg border border-border bg-card/40">
-            <ModePanel />
-          </div>
-        </aside>
-      </div>
-
-      <footer className="border-t border-border/60 px-5 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        Manual · Replay · Learn · Auto · Curriculum · Tripo3D · CEM · Generalization
-      </footer>
-    </main>
-  )
+    </div>
+  );
 }

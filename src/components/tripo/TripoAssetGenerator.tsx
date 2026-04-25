@@ -368,16 +368,17 @@ export default function TripoAssetGenerator() {
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-sky-100">
                 <Sparkles className="h-3.5 w-3.5" />
-                Secure Tripo Route
+                Secure Tripo Debug Route
               </div>
               <div>
                 <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                  Generate ISS-ready WebXR assets
+                  Generate ISS assets for downstream scene integration
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
                   Presets, prompt editing, server-side generation, polling, and
-                  result links all stay inside this page. The frontend never
-                  receives the Tripo API key.
+                  result links stay inside this isolated debug page. The
+                  frontend never receives the Tripo API key, and this route does
+                  not implement the main 3D scene.
                 </p>
               </div>
             </div>

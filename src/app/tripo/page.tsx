@@ -16,9 +16,9 @@ const bodyFont = IBM_Plex_Sans({
 });
 
 export const metadata = {
-  title: "Tripo3D Asset Generator",
+  title: "Tripo3D Debug Console",
   description:
-    "Generate ISS-themed WebXR assets through secure server-side Tripo API routes.",
+    "Debug ISS-themed asset generation through secure server-side Tripo API routes.",
 };
 
 export default function TripoPage() {
@@ -33,18 +33,20 @@ export default function TripoPage() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="inline-flex items-center rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs uppercase tracking-[0.28em] text-sky-100">
-              Tripo3D Asset Generator
+              Tripo3D Debug Console
             </div>
             <h1
               className="mt-4 text-4xl font-semibold tracking-[0.02em] text-white sm:text-5xl"
               style={{ fontFamily: "var(--font-tripo-display)" }}
             >
-              Generate ISS-themed WebXR assets securely
+              Debug ISS asset generation without touching the main scene
             </h1>
             <p className="mt-4 max-w-3xl text-base leading-8 text-slate-300 sm:text-lg">
-              Generate ISS-themed WebXR assets through secure server-side Tripo
-              API routes. Presets, prompt editing, polling, and result links all
-              live here, while the API key stays in the backend only.
+              This isolated route is only for Tripo backend testing and asset
+              inspection. It generates ISS-themed assets through secure
+              server-side routes, surfaces task status and model URLs, and stays
+              separate from Member B's main 3D viewer and Member C's learning
+              systems.
             </p>
           </div>
           <Link

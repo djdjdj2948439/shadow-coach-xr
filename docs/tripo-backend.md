@@ -130,6 +130,25 @@ No existing GLB/WebXR viewer was found in this repo, so the current frontend
 shows asset cards and URL output first. The next step is wiring `modelUrl` into
 an existing or new Three.js / WebXR viewer.
 
+This page is intentionally an isolated debug console for Tripo backend testing.
+It is not the main 3D scene, not the main viewer, and not a replacement for
+Member B's Three.js / WebXR work.
+
+## Teammate Integration Contract
+
+Member B can call:
+
+- `POST /api/tripo/generate`
+- `GET /api/tripo/task?taskId=...`
+- `GET /api/tripo/cache`
+
+Member B should use the returned `modelUrl` to load GLB or model assets into
+the Three.js / React Three Fiber / WebXR scene that B owns.
+
+Member C should not depend on Tripo directly. If C needs asset references for
+evaluation or experiment metadata, C should only consume final asset IDs or
+model URLs after generation is complete.
+
 ## Polling Strategy
 
 The Tripo limit docs describe concurrency pools and 429 behavior, so the UI uses

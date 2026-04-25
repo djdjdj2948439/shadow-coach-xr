@@ -1,11 +1,11 @@
 "use client"
 import { useEffect } from "react"
 import useSWR from "swr"
-import { useHabitat } from "@/lib/store"
+import { useHabitat } from "@/features/shared/client-store"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Plus } from "lucide-react"
-import type { TaskSpec } from "@/lib/types"
+import type { TaskSpec } from "@/features/shared/types"
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json())
 

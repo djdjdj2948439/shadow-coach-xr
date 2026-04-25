@@ -1,12 +1,12 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { useHabitat } from "@/lib/store"
+import { useHabitat } from "@/features/shared/client-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Loader2, Play, Square, Wand2 } from "lucide-react"
-import { fmt } from "@/lib/utils"
-import type { TaskSpec } from "@/lib/types"
+import { fmt } from "@/features/shared/utils"
+import type { TaskSpec } from "@/features/shared/types"
 
 type EvalRow = { taskId: string; name: string; difficulty: number; avgReturn: number; successRate: number }
 

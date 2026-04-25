@@ -3,7 +3,7 @@ import useSWR from "swr"
 import { Area, AreaChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
 import { Card, CardContent, CardDescription, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { fmt } from "@/lib/utils"
+import { fmt } from "@/features/shared/utils"
 
 type Metrics = {
   total: number

@@ -1,12 +1,12 @@
 "use client"
 import { useState } from "react"
-import { useHabitat } from "@/lib/store"
+import { useHabitat } from "@/features/shared/client-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { fmt } from "@/lib/utils"
+import { fmt } from "@/features/shared/utils"
 import { Brain, Loader2, Sparkles } from "lucide-react"
-import type { Policy } from "@/lib/types"
+import type { Policy } from "@/features/shared/types"
 
 type Update = { iter: number; total: number; eliteAvg: number; best: number; successRate: number }
 

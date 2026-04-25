@@ -6,8 +6,8 @@ import * as THREE from "three"
 import { IssEnvironment } from "./iss-environment"
 import { RobotArm } from "./robot-arm"
 import { GoalMarker, TargetObject } from "./target-object"
-import { useHabitat } from "@/lib/store"
-import { defaultAgent } from "@/lib/simulator"
+import { useHabitat } from "@/features/shared/client-store"
+import { defaultAgent } from "@/features/agent/simulator"
 
 function SimDriver({ rate = 20 }: { rate?: number }) {
   const acc = useRef(0)

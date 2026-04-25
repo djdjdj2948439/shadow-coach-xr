@@ -37,41 +37,33 @@
 \`\`\`
 app/
 ├── api/
-│   ├── tasks/                # 课程任务 CRUD + 程序化生成
-│   ├── episodes/             # 示范 + 自动 episode 列表 / 详情
-│   ├── policies/             # 策略列表
-│   │   ├── train/            # CEM 训练 (SSE)
-│   │   └── evaluate/         # 跨任务评估
-│   ├── metrics/              # 聚合指标
-│   ├── assets/               # 资产库 (Tripo 生成结果)
-│   └── tripo/
-│       ├── generate/         # 提交 text_to_model 任务
-│       └── stream/[id]/      # 进度 SSE
-├── page.tsx                  # 主控制台 (3D 场景 + 模式面板 + 资产面板)
+│   ├── tasks/                # 薄路由，委托 features/product/server
+│   ├── episodes/             # 薄路由，委托 features/agent/server
+│   ├── policies/             # 薄路由，委托 features/agent/server
+│   ├── metrics/              # 薄路由，委托 features/agent/server
+│   ├── assets/               # 薄路由，委托 features/backend/server
+│   └── tripo/                # 薄路由，委托 features/backend/server
+├── page.tsx                  # 成员 A 维护：主控制台总装
 ├── layout.tsx
 ├── error.tsx / not-found.tsx
 └── globals.css
 components/
-├── scene/                    # R3F 场景：ISS 轨道、机械臂、目标物
-├── modes/                    # 5 个模式面板
-├── ui/                       # Button / Card / Tabs / Slider 等原语
-├── generation-panel.tsx      # Tripo3D 流式生成 UI + 资产库
-├── metrics-panel.tsx         # 训练 / 评估指标
-├── task-selector.tsx         # 任务切换
-├── mode-switcher.tsx         # 5 模式切换
-├── mode-panel.tsx            # 当前模式渲染容器
-├── scene-loader.tsx          # 动态 import 3D 场景 (避免 SSR)
-└── data-bootstrap.tsx        # 启动时拉取 tasks/policies/episodes
+└── ui/                       # 成员 B 维护：Button / Card / Tabs / Slider 等原语
+features/
+├── product/                  # 成员 A：任务定义、demo 剧本、任务面板、tasks API 逻辑
+├── frontend/                 # 成员 B：R3F 场景、机器人、Manual/Replay/Auto 可视化
+├── agent/                    # 成员 C：simulator、policy、curriculum、Learn/Metrics/API 逻辑
+├── backend/                  # 成员 D：Tripo3D client、生成面板、assets/tripo API 逻辑
+└── shared/                   # 共享类型、client store、server store、通用工具
 lib/
-├── simulator.ts              # 物理模拟（重力 / 阻尼 / 关节 / 抓取 / 奖励）
-├── policy.ts                 # 策略表示 + CEM 优化器
-├── curriculum.ts             # 课程任务生成 + 难度推进
-├── server-store.ts           # Node 进程内内存存储
-├── store.ts                  # Zustand 客户端状态机（含 sim tick 驱动）
-├── tripo.ts                  # Tripo3D Open API 封装
-├── types.ts                  # 全局类型
-└── utils.ts                  # cn() 工具
+└── *.ts                      # 兼容 re-export shim；新代码优先从 features/* 导入
+docs/
+├── TEAM_OWNERSHIP.md         # 四人文件归属和协作规则
+├── DEMO_SCRIPT.md            # 评审演示流程、成功/失败条件
+└── API_CONTRACTS.md          # 共享类型、store、API payload 变更流程
 \`\`\`
+
+> 协作时按 `docs/TEAM_OWNERSHIP.md` 的文件归属修改。共享类型或 store action 的变更先写入 `docs/API_CONTRACTS.md`，再改实现。
 
 ---
 

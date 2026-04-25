@@ -1,13 +1,13 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
 import useSWR from "swr"
-import { useHabitat } from "@/lib/store"
+import { useHabitat } from "@/features/shared/client-store"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Textarea } from "@/components/ui/input"
 import { Loader2, Sparkles, Box, AlertCircle } from "lucide-react"
-import type { AssetItem, TargetSpec } from "@/lib/types"
+import type { AssetItem, TargetSpec } from "@/features/shared/types"
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json())
 

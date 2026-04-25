@@ -2,7 +2,7 @@
 import dynamic from "next/dynamic"
 
 export const HabitatSceneClient = dynamic(
-  () => import("./scene/habitat-scene").then((m) => m.HabitatScene),
+  () => import("./habitat-scene").then((m) => m.HabitatScene),
   {
     ssr: false,
     loading: () => (

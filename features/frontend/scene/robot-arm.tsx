@@ -1,8 +1,8 @@
 "use client"
 import { useRef, useEffect } from "react"
 import * as THREE from "three"
-import type { AgentState } from "@/lib/types"
-import { ARM } from "@/lib/simulator"
+import type { AgentState } from "@/features/shared/types"
+import { ARM } from "@/features/agent/simulator"
 
 type Props = {
   agent: AgentState

@@ -1,8 +1,8 @@
 "use client"
 
-import { useHabitat } from "@/lib/store"
-import type { ControlMode } from "@/lib/types"
-import { cn } from "@/lib/utils"
+import { useHabitat } from "@/features/shared/client-store"
+import type { ControlMode } from "@/features/shared/types"
+import { cn } from "@/features/shared/utils"
 import { Hand, Repeat, GraduationCap, Bot, ListOrdered } from "lucide-react"
 
 const modes: { value: ControlMode; label: string; icon: typeof Hand; hint: string }[] = [

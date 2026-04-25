@@ -2,7 +2,7 @@
 import { Suspense, useMemo } from "react"
 import { useGLTF, Html } from "@react-three/drei"
 import * as THREE from "three"
-import type { TargetSpec, Vec3 } from "@/lib/types"
+import type { TargetSpec, Vec3 } from "@/features/shared/types"
 
 type Props = {
   target: TargetSpec

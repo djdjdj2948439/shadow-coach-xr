@@ -1,6 +1,6 @@
 "use client"
 import { useEffect } from "react"
-import { useHabitat } from "@/lib/store"
+import { useHabitat } from "@/features/shared/client-store"
 import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Pause, Play, RotateCcw, Square } from "lucide-react"

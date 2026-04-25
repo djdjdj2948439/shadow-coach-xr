@@ -1,8 +1,8 @@
 "use client"
 import { useEffect } from "react"
 import useSWR from "swr"
-import { useHabitat } from "@/lib/store"
-import type { Episode, Policy, TaskSpec, AssetItem } from "@/lib/types"
+import { useHabitat } from "@/features/shared/client-store"
+import type { Episode, Policy, TaskSpec, AssetItem } from "@/features/shared/types"
 
 const fetcher = (u: string) => fetch(u).then((r) => r.json())
 

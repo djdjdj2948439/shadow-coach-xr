@@ -2,19 +2,33 @@
 
 ## Purpose
 
-This backend module creates and polls Tripo3D text-to-model jobs for the XR hackathon demo. It is designed to keep `TRIPO_API_KEY` server-side, expose a small Next.js API surface for teammates, and provide a mock fallback when the real Tripo API should not be used.
+This module calls Tripo through backend route handlers so the frontend never
+touches `TRIPO_API_KEY`. It is used to generate ISS-themed, WebXR-friendly, low
+poly training assets for the hackathon demo, including station interiors,
+panels, storage props, tools, and helper robot variants.
 
-Prompt presets live in `src/lib/tripo.ts` for the main asset categories:
+Current prompt presets are defined in `src/lib/tripoPresets.ts` and exported
+through `src/lib/tripo.ts`.
 
-- `ISS_MODULE`
-- `ISS_TOOL_KIT`
-- `ISS_CONTROL_PANEL`
-- `ISS_STORAGE_BAG`
-- `ASSISTANT_ROBOT`
+## Required Reading
 
-## Local Environment Setup
+These official docs were reviewed before implementation:
 
-Create or update `.env.local` with:
+- Tripo Quick Start: <https://platform.tripo3d.ai/docs/quick-start>
+- Tripo Generation: <https://platform.tripo3d.ai/docs/generation>
+- Tripo Task: <https://platform.tripo3d.ai/docs/task>
+- Tripo Upload: <https://platform.tripo3d.ai/docs/upload>
+- Tripo Rate Limit: <https://platform.tripo3d.ai/docs/limit>
+- Tripo Schema: <https://platform.tripo3d.ai/docs/schema>
+- Tripo Post Process: <https://platform.tripo3d.ai/docs/post-process>
+- Tripo Changelog: <https://platform.tripo3d.ai/docs/changelog>
+- Next.js Route Handlers: <https://nextjs.org/docs/app/getting-started/route-handlers>
+- Next.js Environment Variables: <https://nextjs.org/docs/app/guides/environment-variables>
+- Vercel Environment Variables: <https://vercel.com/docs/environment-variables>
+
+## Local Configuration
+
+`.env.local`
 
 ```bash
 TRIPO_API_KEY=your_tripo_api_key_here
@@ -22,17 +36,47 @@ USE_MOCK_TRIPO=false
 TRIPO_CACHE_TTL_SECONDS=3600
 ```
 
-Do not commit `.env.local`.
+`.env.example`
 
-`.env.example` intentionally keeps `TRIPO_API_KEY=` empty so the real key never enters Git history.
+```bash
+TRIPO_API_KEY=
+USE_MOCK_TRIPO=true
+TRIPO_CACHE_TTL_SECONDS=3600
+```
 
-## API Endpoints
+Rules:
+
+- Do not commit `.env.local`.
+- Do not expose Tripo secrets with any `NEXT_PUBLIC_` prefix.
+- Tripo credentials must stay server-side only.
+- `.env.local` is read from the project root for local development.
+
+## Official API Notes
+
+Confirmed from the official docs:
+
+- Authentication uses `Authorization: Bearer <TRIPO_API_KEY>`.
+- The task creation endpoint is `POST https://api.tripo3d.ai/v2/openapi/task`.
+- Task polling uses `GET https://api.tripo3d.ai/v2/openapi/task/{task_id}`.
+- The task must be queried with the same API key that created it.
+- `text_to_model` accepts `prompt`, while `model_version` is optional.
+- Official text-to-model prompt length is up to 1024 characters, but this app
+  intentionally enforces a stricter 800-character UI limit.
+- Task output may include `output.model`, `output.base_model`,
+  `output.pbr_model`, rendered previews, and additional undocumented fields.
+- Official output model URLs are temporary and may expire after about five
+  minutes.
+
+Current implementation intentionally omits `model_version`, so Tripo uses its
+default generation model. Based on the latest changelog, `P1-20260311` is the
+most interesting future option for clean topology and real-time workflows, while
+`v3.1-20260211` targets higher fidelity assets.
+
+## API Usage
 
 ### `POST /api/tripo/generate`
 
-Creates a Tripo text-to-model task.
-
-Request body:
+Creates a text-to-model Tripo task through the backend.
 
 ```json
 {
@@ -48,73 +92,90 @@ curl -X POST http://localhost:3000/api/tripo/generate \
   -d '{"prompt":"A realistic ISS module interior with control panels, floating tools and storage bags"}'
 ```
 
-Response shape:
+### `GET /api/tripo/task?taskId=xxx`
 
-```json
-{
-  "ok": true,
-  "mock": false,
-  "taskId": "task_xxx",
-  "status": "queued",
-  "prompt": "A realistic ISS module interior with control panels, floating tools and storage bags",
-  "message": "Tripo task created successfully.",
-  "raw": {}
-}
-```
-
-### `GET /api/tripo/task?taskId=...`
-
-Polls a Tripo task. The route checks the in-memory cache first, then falls back to the remote Tripo API.
-
-Example:
+Polls a task, normalizes status, and tries to extract a model URL from the
+official output shapes.
 
 ```bash
 curl "http://localhost:3000/api/tripo/task?taskId=task_xxx"
 ```
 
-Response shape:
-
-```json
-{
-  "ok": true,
-  "cached": false,
-  "mock": false,
-  "taskId": "task_xxx",
-  "status": "running",
-  "modelUrl": null,
-  "raw": {}
-}
-```
-
 ### `GET /api/tripo/cache`
 
-Returns the current in-memory cache entries for debugging.
-
-Example:
+Returns the current in-memory cache list for debug and demo use.
 
 ```bash
 curl "http://localhost:3000/api/tripo/cache"
 ```
 
+## Frontend Page
+
+Page path:
+
+- `/tripo`
+
+Current UI supports:
+
+- preset selector
+- prompt editor
+- generate button
+- auto polling
+- manual refresh
+- result card
+- `modelUrl` copy/open actions
+- cache panel for recent tasks
+
+No existing GLB/WebXR viewer was found in this repo, so the current frontend
+shows asset cards and URL output first. The next step is wiring `modelUrl` into
+an existing or new Three.js / WebXR viewer.
+
+## Polling Strategy
+
+The Tripo limit docs describe concurrency pools and 429 behavior, so the UI uses
+lightweight polling instead of aggressive retries:
+
+- start polling every 4 seconds
+- stop polling on `success`, `failed`, `banned`, `expired`, `cancelled`, or
+  `unknown`
+- stop auto polling after 5 minutes
+- let the user manually refresh after timeout
+- avoid infinite retry loops after an error
+
 ## Mock Fallback
 
-The backend returns mock task data instead of failing when either of these is true:
+Mock mode activates when either condition is true:
 
 - `USE_MOCK_TRIPO=true`
 - `TRIPO_API_KEY` is missing
 
-This keeps the demo route stable during local development, CI, or preview deployments where a real Tripo key is unavailable.
+This prevents the hackathon UI from crashing when real Tripo access is not
+available. Mock tasks move through queued, running, and success states so the UI
+can still be demonstrated end to end.
 
-## Cache Behavior
+## Vercel Deployment
 
-`src/lib/tripoCache.ts` uses a process-local `Map` with TTL support. This is meant only for the hackathon demo and does not persist across restarts or serverless cold starts.
-
-## Vercel Environment Variables
-
-Add these variables in the Vercel project settings:
+Configure these variables in Vercel Project Settings:
 
 - `TRIPO_API_KEY`
-- `USE_MOCK_TRIPO`
-- `TRIPO_CACHE_TTL_SECONDS`
+- `USE_MOCK_TRIPO=false`
+- `TRIPO_CACHE_TTL_SECONDS=3600`
 
-For preview environments without a valid Tripo key, set `USE_MOCK_TRIPO=true`.
+Notes:
+
+- Do not store secrets in `vercel.json`.
+- Do not put the real key in GitHub.
+- Environment variable changes only apply to new deployments, so redeploy after
+  editing them.
+- Local development can keep using `.env.local`.
+
+## Known Limitations
+
+- The current cache is a process-local memory cache, not a durable store.
+- On Vercel serverless infrastructure, memory cache is not guaranteed across
+  invocations or instances.
+- Future work can move cache state to Vercel KV, Upstash, or Supabase.
+- Image-to-3D is not wired into the frontend yet; future work can use the Upload
+  API with `multipart/form-data`.
+- Post-process conversion is not wired yet; future work can trigger
+  `convert_model` for formats such as `OBJ`, `FBX`, `USDZ`, or `GLTF`.

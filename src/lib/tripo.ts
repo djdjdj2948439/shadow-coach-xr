@@ -1,56 +1,108 @@
 import {
   TripoCreateTaskResponse,
-  TripoPromptPreset,
+  TripoTaskStatus,
   TripoTaskStatusResponse,
 } from "@/lib/types";
+import { TRIPO_PROMPT_PRESETS } from "@/lib/tripoPresets";
 
 const TRIPO_API_BASE_URL = "https://api.tripo3d.ai/v2/openapi";
-const MOCK_TASK_STATUS = "mock_succeeded";
+const TRIPO_TASK_ENDPOINT = `${TRIPO_API_BASE_URL}/task`;
 
-export const TRIPO_PROMPT_PRESETS: Record<string, TripoPromptPreset> = {
-  ISS_MODULE: {
-    id: "ISS_MODULE",
-    prompt:
-      "A realistic International Space Station module interior with white curved walls, handrails, control panels, cable details, storage bags, soft lighting, optimized as a low-poly GLB asset for WebXR.",
-  },
-  ISS_TOOL_KIT: {
-    id: "ISS_TOOL_KIT",
-    prompt:
-      "A compact astronaut tool kit floating in zero gravity, including wrench, screwdriver, tether hooks and small labeled equipment, clean sci-fi style, low-poly game-ready 3D model.",
-  },
-  ISS_CONTROL_PANEL: {
-    id: "ISS_CONTROL_PANEL",
-    prompt:
-      "A futuristic ISS control panel with screens, switches, warning labels, cables and modular surface details, low-poly 3D asset for a browser-based WebXR scene.",
-  },
-  ISS_STORAGE_BAG: {
-    id: "ISS_STORAGE_BAG",
-    prompt:
-      "A soft white fabric storage bag used inside a space station, with straps, zippers, label patches and velcro texture, low-poly 3D model.",
-  },
-  ASSISTANT_ROBOT: {
-    id: "ASSISTANT_ROBOT",
-    prompt:
-      "A small friendly assistant robot designed for an ISS training module, white shell, blue sensor eye, compact body, floating in microgravity, low-poly game-ready 3D model.",
-  },
-};
+const MODEL_URL_PATHS = [
+  ["output", "model"],
+  ["output", "pbr_model"],
+  ["output", "model_url"],
+  ["output", "glb"],
+  ["output", "glb_url"],
+  ["output", "outputUrl"],
+  ["output", "output_url"],
+  ["data", "output", "model"],
+  ["data", "output", "pbr_model"],
+  ["data", "output", "model_url"],
+  ["data", "output", "glb"],
+  ["data", "output", "glb_url"],
+  ["result", "output", "model"],
+  ["result", "output", "pbr_model"],
+  ["result", "output", "model_url"],
+  ["result", "output", "glb"],
+  ["result", "output", "glb_url"],
+  ["result", "model"],
+  ["model"],
+  ["modelUrl"],
+] as const;
+
+const TASK_ID_PATHS = [
+  ["task_id"],
+  ["taskId"],
+  ["id"],
+  ["data", "task_id"],
+  ["data", "taskId"],
+  ["data", "id"],
+  ["result", "task_id"],
+  ["result", "taskId"],
+  ["result", "id"],
+] as const;
+
+const STATUS_PATHS = [
+  ["status"],
+  ["state"],
+  ["data", "status"],
+  ["data", "state"],
+  ["result", "status"],
+  ["result", "state"],
+] as const;
 
 function asObject(value: unknown): Record<string, unknown> {
-  if (Array.isArray(value)) {
-    return { items: value };
-  }
-
-  if (value && typeof value === "object") {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>;
   }
 
-  return { value: value ?? null };
+  return {};
 }
 
 function getStringValue(value: unknown) {
-  return typeof value === "string" && value.trim().length > 0
-    ? value.trim()
-    : null;
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmedValue = value.trim();
+  return trimmedValue.length > 0 ? trimmedValue : null;
+}
+
+function getNumberValue(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getNestedValue(
+  input: unknown,
+  path: readonly string[],
+): unknown | null {
+  let current: unknown = input;
+
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return current ?? null;
+}
+
+function getFirstStringFromPaths(
+  input: unknown,
+  paths: readonly (readonly string[])[],
+) {
+  for (const path of paths) {
+    const candidate = getStringValue(getNestedValue(input, path));
+
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function getApiKey() {
@@ -68,8 +120,14 @@ function getErrorMessage(payload: unknown) {
     raw.error,
     raw.detail,
     raw.msg,
+    raw.error_msg,
     asObject(raw.data).message,
     asObject(raw.data).error,
+    asObject(raw.data).detail,
+    asObject(raw.data).error_msg,
+    asObject(raw.result).message,
+    asObject(raw.result).error,
+    asObject(raw.result).detail,
   ];
 
   for (const candidate of candidates) {
@@ -83,71 +141,63 @@ function getErrorMessage(payload: unknown) {
   return null;
 }
 
-function findNestedString(
-  input: unknown,
-  preferredKeys: string[],
-  visited = new WeakSet<object>(),
-): string | null {
-  if (typeof input === "string") {
-    const value = input.trim();
-    if (value.startsWith("http://") || value.startsWith("https://")) {
-      return value;
-    }
-
-    return value.endsWith(".glb") ? value : null;
-  }
-
-  if (!input || typeof input !== "object") {
-    return null;
-  }
-
-  if (visited.has(input)) {
-    return null;
-  }
-
-  visited.add(input);
-
-  if (Array.isArray(input)) {
-    for (const entry of input) {
-      const match = findNestedString(entry, preferredKeys, visited);
-      if (match) {
-        return match;
-      }
-    }
-
-    return null;
-  }
-
-  const record = input as Record<string, unknown>;
-
-  for (const key of preferredKeys) {
-    if (!(key in record)) {
-      continue;
-    }
-
-    const match = findNestedString(record[key], preferredKeys, visited);
-    if (match) {
-      return match;
-    }
-  }
-
-  for (const value of Object.values(record)) {
-    const match = findNestedString(value, preferredKeys, visited);
-    if (match) {
-      return match;
-    }
-  }
-
-  return null;
+function getTaskId(raw: unknown) {
+  return getFirstStringFromPaths(raw, TASK_ID_PATHS) ?? `mock-${Date.now()}`;
 }
 
-function findPreferredStringValue(
+function getRawStatus(raw: unknown) {
+  return getFirstStringFromPaths(raw, STATUS_PATHS);
+}
+
+function normalizeStatusValue(value: string | null): TripoTaskStatus {
+  switch (value?.toLowerCase()) {
+    case "queued":
+    case "pending":
+    case "mock_queued":
+      return "queued";
+    case "running":
+    case "processing":
+    case "mock_running":
+      return "running";
+    case "success":
+    case "finished":
+    case "completed":
+    case "mock_succeeded":
+      return "success";
+    case "failed":
+    case "error":
+      return "failed";
+    case "banned":
+      return "banned";
+    case "expired":
+      return "expired";
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    default:
+      return "unknown";
+  }
+}
+
+export function normalizeStatus(raw: unknown): TripoTaskStatus {
+  if (typeof raw === "string") {
+    return normalizeStatusValue(raw);
+  }
+
+  return normalizeStatusValue(getRawStatus(raw));
+}
+
+function isLikelyModelUrl(value: string) {
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
+function findStringDeep(
   input: unknown,
-  preferredKeys: string[],
+  preferredKeys: readonly string[],
   visited = new WeakSet<object>(),
 ): string | null {
   if (typeof input === "string") {
-    return getStringValue(input);
+    return isLikelyModelUrl(input) ? input : null;
   }
 
   if (!input || typeof input !== "object") {
@@ -161,8 +211,8 @@ function findPreferredStringValue(
   visited.add(input);
 
   if (Array.isArray(input)) {
-    for (const entry of input) {
-      const match = findPreferredStringValue(entry, preferredKeys, visited);
+    for (const item of input) {
+      const match = findStringDeep(item, preferredKeys, visited);
       if (match) {
         return match;
       }
@@ -174,53 +224,74 @@ function findPreferredStringValue(
   const record = input as Record<string, unknown>;
 
   for (const key of preferredKeys) {
-    if (!(key in record)) {
-      continue;
+    const candidate = record[key];
+
+    if (typeof candidate === "string" && isLikelyModelUrl(candidate)) {
+      return candidate;
     }
 
-    const directValue = getStringValue(record[key]);
-    if (directValue) {
-      return directValue;
-    }
-
-    const nestedMatch = findPreferredStringValue(
-      record[key],
-      preferredKeys,
-      visited,
-    );
+    const nestedMatch = findStringDeep(candidate, preferredKeys, visited);
     if (nestedMatch) {
       return nestedMatch;
     }
   }
 
-  for (const value of Object.values(record)) {
-    const match = findPreferredStringValue(value, preferredKeys, visited);
-    if (match) {
-      return match;
-    }
-  }
-
   return null;
 }
 
-function findTaskId(input: unknown) {
-  return (
-    findPreferredStringValue(input, ["task_id", "taskId", "id"]) ??
-    getStringValue(asObject(input).id) ??
-    getStringValue(asObject(asObject(input).data).task_id) ??
-    getStringValue(asObject(asObject(input).data).id) ??
-    `mock-${Date.now()}`
-  );
+function extractApiResponseData(payload: unknown) {
+  const raw = asObject(payload);
+  const data = asObject(raw.data);
+  const result = asObject(raw.result);
+
+  return Object.keys(data).length > 0
+    ? data
+    : Object.keys(result).length > 0
+      ? result
+      : raw;
 }
 
-function findStatus(input: unknown) {
-  return (
-    getStringValue(asObject(input).status) ??
-    getStringValue(asObject(input).state) ??
-    getStringValue(asObject(asObject(input).data).status) ??
-    getStringValue(asObject(asObject(input).data).state) ??
-    "queued"
-  );
+function buildMockTaskStatus(taskId: string): TripoTaskStatusResponse {
+  const mockTimestamp = Number.parseInt(taskId.replace("mock-", ""), 10);
+  const ageMs = Number.isNaN(mockTimestamp)
+    ? Number.POSITIVE_INFINITY
+    : Date.now() - mockTimestamp;
+
+  let status: TripoTaskStatus = "queued";
+  let modelUrl: string | null = null;
+  let progress = 0;
+
+  if (ageMs >= 12_000) {
+    status = "success";
+    progress = 100;
+    modelUrl = `https://example.com/mock/tripo/${taskId}.glb`;
+  } else if (ageMs >= 4_000) {
+    status = "running";
+    progress = 62;
+  }
+
+  return {
+    taskId,
+    status,
+    mock: true,
+    modelUrl,
+    raw: {
+      code: 0,
+      data: {
+        task_id: taskId,
+        type: "text_to_model",
+        status,
+        output: modelUrl
+          ? {
+              model: modelUrl,
+              glb_url: modelUrl,
+            }
+          : {},
+        progress,
+        mock: true,
+      },
+    },
+  };
 }
 
 async function parseResponseBody(response: Response) {
@@ -238,9 +309,8 @@ async function parseResponseBody(response: Response) {
 }
 
 async function requestTripo(path: string, init: RequestInit) {
-  const apiKey = getApiKey();
   const headers = new Headers(init.headers);
-  headers.set("Authorization", `Bearer ${apiKey}`);
+  headers.set("Authorization", `Bearer ${getApiKey()}`);
 
   const response = await fetch(`${TRIPO_API_BASE_URL}${path}`, {
     ...init,
@@ -249,111 +319,88 @@ async function requestTripo(path: string, init: RequestInit) {
   });
 
   const payload = await parseResponseBody(response);
+  const responseCode = getNumberValue(asObject(payload).code);
 
-  if (!response.ok) {
+  if (!response.ok || (responseCode !== null && responseCode !== 0)) {
     const apiMessage = getErrorMessage(payload);
-    throw new Error(
-      apiMessage ??
-        `Tripo API request failed with status ${response.status}.`,
-    );
+    const fallbackMessage = response.ok
+      ? "Tripo API returned an unexpected error."
+      : `Tripo API request failed with status ${response.status}.`;
+
+    throw new Error(apiMessage ?? fallbackMessage);
   }
 
   return payload;
 }
 
-function buildMockCreateTask(prompt: string): TripoCreateTaskResponse {
-  const taskId = `mock-${Date.now()}`;
-
-  return {
-    taskId,
-    status: "mock_queued",
-    mock: true,
-    message:
-      "Using mock Tripo task because USE_MOCK_TRIPO is enabled or TRIPO_API_KEY is missing.",
-    raw: {
-      id: taskId,
-      task_id: taskId,
-      status: "mock_queued",
-      type: "text_to_model",
-      prompt,
-      mock: true,
-    },
-  };
-}
-
-function buildMockTaskStatus(taskId: string): TripoTaskStatusResponse {
-  const modelUrl = `https://example.com/mock/tripo/${taskId}.glb`;
-
-  return {
-    taskId,
-    status: MOCK_TASK_STATUS,
-    mock: true,
-    modelUrl,
-    raw: {
-      id: taskId,
-      task_id: taskId,
-      status: MOCK_TASK_STATUS,
-      output: {
-        modelUrl,
-        glbUrl: modelUrl,
-      },
-      mock: true,
-    },
-  };
-}
-
 export function extractModelUrl(raw: unknown) {
-  return findNestedString(raw, [
-    "modelUrl",
-    "model_url",
-    "glbUrl",
-    "glb_url",
-    "outputUrl",
-    "output_url",
-    "url",
-    "fileUrl",
-    "file_url",
-    "downloadUrl",
-    "download_url",
+  for (const path of MODEL_URL_PATHS) {
+    const candidate = getStringValue(getNestedValue(raw, path));
+
+    if (candidate && isLikelyModelUrl(candidate)) {
+      return candidate;
+    }
+  }
+
+  const output = getNestedValue(raw, ["output"]) ?? getNestedValue(raw, ["data", "output"]);
+  const deepMatch = findStringDeep(output, [
     "model",
+    "pbr_model",
+    "model_url",
     "glb",
+    "glb_url",
+    "modelUrl",
+    "outputUrl",
   ]);
+
+  return deepMatch ?? null;
 }
 
 export async function createTripoTask(
   prompt: string,
 ): Promise<TripoCreateTaskResponse> {
   if (shouldUseMockTripo()) {
-    return buildMockCreateTask(prompt);
-  }
-
-  try {
-    const payload = await requestTripo("/task", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        type: "text_to_model",
-        prompt,
-      }),
-    });
+    const taskId = `mock-${Date.now()}`;
 
     return {
-      taskId: findTaskId(payload),
-      status: findStatus(payload),
-      mock: false,
-      message: "Tripo task created successfully.",
-      raw: asObject(payload),
+      taskId,
+      status: "queued",
+      mock: true,
+      message:
+        "Using mock Tripo task because USE_MOCK_TRIPO is enabled or TRIPO_API_KEY is missing.",
+      raw: {
+        code: 0,
+        data: {
+          task_id: taskId,
+          status: "queued",
+          type: "text_to_model",
+          prompt,
+          mock: true,
+        },
+      },
     };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to create a Tripo task.";
-
-    throw new Error(message);
   }
+
+  const payload = await requestTripo("/task", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      type: "text_to_model",
+      prompt,
+    }),
+  });
+
+  const status = normalizeStatus(payload);
+
+  return {
+    taskId: getTaskId(payload),
+    status: status === "unknown" ? "queued" : status,
+    mock: false,
+    message: "Tripo task created successfully.",
+    raw: asObject(payload),
+  };
 }
 
 export async function getTripoTask(
@@ -363,24 +410,18 @@ export async function getTripoTask(
     return buildMockTaskStatus(taskId);
   }
 
-  try {
-    const payload = await requestTripo(`/task/${encodeURIComponent(taskId)}`, {
-      method: "GET",
-    });
+  const payload = await requestTripo(`/task/${encodeURIComponent(taskId)}`, {
+    method: "GET",
+  });
+  const taskData = extractApiResponseData(payload);
 
-    return {
-      taskId: findTaskId(payload) ?? taskId,
-      status: findStatus(payload),
-      mock: false,
-      modelUrl: extractModelUrl(payload),
-      raw: asObject(payload),
-    };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : `Failed to get Tripo task ${taskId}.`;
-
-    throw new Error(message);
-  }
+  return {
+    taskId: getTaskId(payload) ?? taskId,
+    status: normalizeStatus(payload),
+    mock: false,
+    modelUrl: extractModelUrl(payload),
+    raw: taskData,
+  };
 }
+
+export { TRIPO_PROMPT_PRESETS, TRIPO_TASK_ENDPOINT };

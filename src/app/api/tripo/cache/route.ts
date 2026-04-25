@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { listCachedTasks } from "@/lib/tripoCache";
+import { getTripoCacheTtlSeconds, listCachedTasks } from "@/lib/tripoCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +11,7 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     count: tasks.length,
+    ttlSeconds: getTripoCacheTtlSeconds(),
     tasks,
   });
 }

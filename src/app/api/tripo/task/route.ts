@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getTripoTask } from "@/lib/tripo";
 import { getCachedTask, setCachedTask } from "@/lib/tripoCache";
+import { isFinalTripoStatus } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const taskId = searchParams.get("taskId")?.trim();
+  const refresh =
+    searchParams.get("refresh") === "1" ||
+    searchParams.get("refresh") === "true";
 
   if (!taskId) {
     return NextResponse.json(
@@ -22,7 +26,7 @@ export async function GET(request: Request) {
 
   const cachedEntry = getCachedTask(taskId);
 
-  if (cachedEntry) {
+  if (cachedEntry && !refresh && isFinalTripoStatus(cachedEntry.status)) {
     return NextResponse.json({
       ok: true,
       cached: true,
@@ -55,6 +59,21 @@ export async function GET(request: Request) {
       raw: result.raw,
     });
   } catch (error) {
+    if (cachedEntry) {
+      return NextResponse.json({
+        ok: true,
+        cached: true,
+        mock: cachedEntry.mock,
+        taskId: cachedEntry.taskId,
+        status: cachedEntry.status,
+        modelUrl: cachedEntry.modelUrl,
+        raw: {
+          ...cachedEntry.raw,
+          cacheFallback: true,
+        },
+      });
+    }
+
     return NextResponse.json(
       {
         ok: false,

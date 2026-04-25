@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createTripoTask } from "@/lib/tripo";
+import { setCachedTask } from "@/lib/tripoCache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,13 @@ export async function POST(request: Request) {
 
   try {
     const result = await createTripoTask(promptValue);
+    setCachedTask(result.taskId, {
+      taskId: result.taskId,
+      status: result.status,
+      modelUrl: null,
+      raw: result.raw,
+      mock: result.mock,
+    });
 
     return NextResponse.json({
       ok: true,

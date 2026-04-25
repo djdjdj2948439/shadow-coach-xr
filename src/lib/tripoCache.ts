@@ -3,7 +3,7 @@ import { TripoCacheEntry } from "@/lib/types";
 const DEFAULT_TTL_SECONDS = 3600;
 const taskCache = new Map<string, TripoCacheEntry>();
 
-function getCacheTtlSeconds() {
+export function getTripoCacheTtlSeconds() {
   const ttlValue = Number.parseInt(
     process.env.TRIPO_CACHE_TTL_SECONDS ?? "",
     10,
@@ -42,7 +42,7 @@ export function setCachedTask(
     ...data,
     taskId,
     cachedAt,
-    expiresAt: cachedAt + getCacheTtlSeconds() * 1000,
+    expiresAt: cachedAt + getTripoCacheTtlSeconds() * 1000,
   };
 
   taskCache.set(taskId, entry);
